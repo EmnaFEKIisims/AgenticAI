@@ -1,0 +1,76 @@
+session_number,course_id,course_title,trainer_id,trainer_name,room_id,room_name,group_id,group_name,suggested_day,suggested_time,reasoning
+1,1,Python Programming,2,Ahmed Ben Ali,3,Lab B201,1,Group Python Beginners,Monday,08:00-11:00,"S1/4 | Ahmed Ben Ali [Python, Data Science] | Lab B201 cap=15>=15"
+2,1,Python Programming,2,Ahmed Ben Ali,3,Lab B201,1,Group Python Beginners,Monday,11:00-14:00,"S2/4 | Ahmed Ben Ali [Python, Data Science] | Lab B201 cap=15>=15"
+3,1,Python Programming,2,Ahmed Ben Ali,3,Lab B201,1,Group Python Beginners,Monday,14:00-17:00,"S3/4 | Ahmed Ben Ali [Python, Data Science] | Lab B201 cap=15>=15"
+4,1,Python Programming,2,Ahmed Ben Ali,3,Lab B201,1,Group Python Beginners,Tuesday,08:00-11:00,"S4/4 | Ahmed Ben Ali [Python, Data Science] | Lab B201 cap=15>=15"
+5,1,Python Programming,3,Sara Trabelsi,4,Lab B202,2,Group Data Science 1,Monday,08:00-11:00,"S1/4 | Sara Trabelsi [SQL, Databases] | Lab B202 cap=18>=12"
+6,1,Python Programming,3,Sara Trabelsi,4,Lab B202,2,Group Data Science 1,Monday,11:00-14:00,"S2/4 | Sara Trabelsi [SQL, Databases] | Lab B202 cap=18>=12"
+7,1,Python Programming,3,Sara Trabelsi,4,Lab B202,2,Group Data Science 1,Monday,14:00-17:00,"S3/4 | Sara Trabelsi [SQL, Databases] | Lab B202 cap=18>=12"
+8,1,Python Programming,3,Sara Trabelsi,4,Lab B202,2,Group Data Science 1,Tuesday,08:00-11:00,"S4/4 | Sara Trabelsi [SQL, Databases] | Lab B202 cap=18>=12"
+9,1,Python Programming,4,Youssef Gharbi,1,Room A101,3,Group AI Fundamentals,Monday,08:00-11:00,"S1/4 | Youssef Gharbi [Machine Learning, Python] | Room A101 cap=20>=10"
+10,1,Python Programming,4,Youssef Gharbi,1,Room A101,3,Group AI Fundamentals,Monday,11:00-14:00,"S2/4 | Youssef Gharbi [Machine Learning, Python] | Room A101 cap=20>=10"
+11,1,Python Programming,4,Youssef Gharbi,1,Room A101,3,Group AI Fundamentals,Monday,14:00-17:00,"S3/4 | Youssef Gharbi [Machine Learning, Python] | Room A101 cap=20>=10"
+12,1,Python Programming,4,Youssef Gharbi,1,Room A101,3,Group AI Fundamentals,Tuesday,08:00-11:00,"S4/4 | Youssef Gharbi [Machine Learning, Python] | Room A101 cap=20>=10"
+13,1,Python Programming,5,Amel Kacem,2,Room A102,4,Group Web Development,Monday,08:00-11:00,"S1/4 | Amel Kacem [Web Development, JavaScript] | Room A102 cap=25>=18"
+14,1,Python Programming,5,Amel Kacem,2,Room A102,4,Group Web Development,Monday,11:00-14:00,"S2/4 | Amel Kacem [Web Development, JavaScript] | Room A102 cap=25>=18"
+15,1,Python Programming,5,Amel Kacem,2,Room A102,4,Group Web Development,Monday,14:00-17:00,"S3/4 | Amel Kacem [Web Development, JavaScript] | Room A102 cap=25>=18"
+16,1,Python Programming,5,Amel Kacem,2,Room A102,4,Group Web Development,Tuesday,08:00-11:00,"S4/4 | Amel Kacem [Web Development, JavaScript] | Room A102 cap=25>=18"
+17,1,Python Programming,6,Karim Mansour,5,Conference C301,5,Group Cybersecurity,Monday,08:00-11:00,S1/4 | Karim Mansour [Cybersecurity] | Conference C301 cap=40>=14
+18,1,Python Programming,6,Karim Mansour,5,Conference C301,5,Group Cybersecurity,Monday,11:00-14:00,S2/4 | Karim Mansour [Cybersecurity] | Conference C301 cap=40>=14
+19,1,Python Programming,6,Karim Mansour,5,Conference C301,5,Group Cybersecurity,Monday,14:00-17:00,S3/4 | Karim Mansour [Cybersecurity] | Conference C301 cap=40>=14
+20,1,Python Programming,6,Karim Mansour,5,Conference C301,5,Group Cybersecurity,Tuesday,08:00-11:00,S4/4 | Karim Mansour [Cybersecurity] | Conference C301 cap=40>=14
+21,1,Python Programming,2,Ahmed Ben Ali,4,Lab B202,6,Group SQL Basics,Tuesday,11:00-14:00,"S1/4 | Ahmed Ben Ali [Python, Data Science] | Lab B202 cap=18>=16"
+22,1,Python Programming,2,Ahmed Ben Ali,4,Lab B202,6,Group SQL Basics,Tuesday,14:00-17:00,"S2/4 | Ahmed Ben Ali [Python, Data Science] | Lab B202 cap=18>=16"
+23,1,Python Programming,2,Ahmed Ben Ali,4,Lab B202,6,Group SQL Basics,Wednesday,08:00-11:00,"S3/4 | Ahmed Ben Ali [Python, Data Science] | Lab B202 cap=18>=16"
+24,1,Python Programming,2,Ahmed Ben Ali,4,Lab B202,6,Group SQL Basics,Wednesday,11:00-14:00,"S4/4 | Ahmed Ben Ali [Python, Data Science] | Lab B202 cap=18>=16"
+25,2,SQL Fundamentals,3,Sara Trabelsi,3,Lab B201,1,Group Python Beginners,Tuesday,11:00-14:00,"S1/3 | Sara Trabelsi [SQL, Databases] | Lab B201 cap=15>=15"
+26,2,SQL Fundamentals,3,Sara Trabelsi,3,Lab B201,1,Group Python Beginners,Tuesday,14:00-17:00,"S2/3 | Sara Trabelsi [SQL, Databases] | Lab B201 cap=15>=15"
+27,2,SQL Fundamentals,3,Sara Trabelsi,3,Lab B201,1,Group Python Beginners,Wednesday,08:00-11:00,"S3/3 | Sara Trabelsi [SQL, Databases] | Lab B201 cap=15>=15"
+28,2,SQL Fundamentals,4,Youssef Gharbi,1,Room A101,2,Group Data Science 1,Tuesday,11:00-14:00,"S1/3 | Youssef Gharbi [Machine Learning, Python] | Room A101 cap=20>=12"
+29,2,SQL Fundamentals,4,Youssef Gharbi,1,Room A101,2,Group Data Science 1,Tuesday,14:00-17:00,"S2/3 | Youssef Gharbi [Machine Learning, Python] | Room A101 cap=20>=12"
+30,2,SQL Fundamentals,4,Youssef Gharbi,1,Room A101,2,Group Data Science 1,Wednesday,08:00-11:00,"S3/3 | Youssef Gharbi [Machine Learning, Python] | Room A101 cap=20>=12"
+31,2,SQL Fundamentals,5,Amel Kacem,2,Room A102,3,Group AI Fundamentals,Tuesday,11:00-14:00,"S1/3 | Amel Kacem [Web Development, JavaScript] | Room A102 cap=25>=10"
+32,2,SQL Fundamentals,5,Amel Kacem,2,Room A102,3,Group AI Fundamentals,Tuesday,14:00-17:00,"S2/3 | Amel Kacem [Web Development, JavaScript] | Room A102 cap=25>=10"
+33,2,SQL Fundamentals,5,Amel Kacem,2,Room A102,3,Group AI Fundamentals,Wednesday,08:00-11:00,"S3/3 | Amel Kacem [Web Development, JavaScript] | Room A102 cap=25>=10"
+34,2,SQL Fundamentals,6,Karim Mansour,5,Conference C301,4,Group Web Development,Tuesday,11:00-14:00,S1/3 | Karim Mansour [Cybersecurity] | Conference C301 cap=40>=18
+35,2,SQL Fundamentals,6,Karim Mansour,5,Conference C301,4,Group Web Development,Tuesday,14:00-17:00,S2/3 | Karim Mansour [Cybersecurity] | Conference C301 cap=40>=18
+36,2,SQL Fundamentals,6,Karim Mansour,5,Conference C301,4,Group Web Development,Wednesday,08:00-11:00,S3/3 | Karim Mansour [Cybersecurity] | Conference C301 cap=40>=18
+37,2,SQL Fundamentals,3,Sara Trabelsi,3,Lab B201,5,Group Cybersecurity,Wednesday,11:00-14:00,"S1/3 | Sara Trabelsi [SQL, Databases] | Lab B201 cap=15>=14"
+38,2,SQL Fundamentals,2,Ahmed Ben Ali,3,Lab B201,5,Group Cybersecurity,Wednesday,14:00-17:00,"S2/3 | Ahmed Ben Ali [Python, Data Science] | Lab B201 cap=15>=14"
+39,2,SQL Fundamentals,2,Ahmed Ben Ali,3,Lab B201,5,Group Cybersecurity,Thursday,08:00-11:00,"S3/3 | Ahmed Ben Ali [Python, Data Science] | Lab B201 cap=15>=14"
+40,2,SQL Fundamentals,3,Sara Trabelsi,4,Lab B202,6,Group SQL Basics,Wednesday,14:00-17:00,"S1/3 | Sara Trabelsi [SQL, Databases] | Lab B202 cap=18>=16"
+41,2,SQL Fundamentals,3,Sara Trabelsi,4,Lab B202,6,Group SQL Basics,Thursday,08:00-11:00,"S2/3 | Sara Trabelsi [SQL, Databases] | Lab B202 cap=18>=16"
+42,2,SQL Fundamentals,2,Ahmed Ben Ali,4,Lab B202,6,Group SQL Basics,Thursday,11:00-14:00,"S3/3 | Ahmed Ben Ali [Python, Data Science] | Lab B202 cap=18>=16"
+43,3,Machine Learning Basics,4,Youssef Gharbi,1,Room A101,1,Group Python Beginners,Wednesday,11:00-14:00,"S1/5 | Youssef Gharbi [Machine Learning, Python] | Room A101 cap=20>=15"
+44,3,Machine Learning Basics,4,Youssef Gharbi,1,Room A101,1,Group Python Beginners,Wednesday,14:00-17:00,"S2/5 | Youssef Gharbi [Machine Learning, Python] | Room A101 cap=20>=15"
+45,3,Machine Learning Basics,4,Youssef Gharbi,1,Room A101,1,Group Python Beginners,Thursday,08:00-11:00,"S3/5 | Youssef Gharbi [Machine Learning, Python] | Room A101 cap=20>=15"
+46,3,Machine Learning Basics,3,Sara Trabelsi,3,Lab B201,1,Group Python Beginners,Thursday,11:00-14:00,"S4/5 | Sara Trabelsi [SQL, Databases] | Lab B201 cap=15>=15"
+47,3,Machine Learning Basics,2,Ahmed Ben Ali,3,Lab B201,1,Group Python Beginners,Thursday,14:00-17:00,"S5/5 | Ahmed Ben Ali [Python, Data Science] | Lab B201 cap=15>=15"
+48,3,Machine Learning Basics,5,Amel Kacem,2,Room A102,2,Group Data Science 1,Wednesday,11:00-14:00,"S1/5 | Amel Kacem [Web Development, JavaScript] | Room A102 cap=25>=12"
+49,3,Machine Learning Basics,5,Amel Kacem,2,Room A102,2,Group Data Science 1,Wednesday,14:00-17:00,"S2/5 | Amel Kacem [Web Development, JavaScript] | Room A102 cap=25>=12"
+50,3,Machine Learning Basics,5,Amel Kacem,2,Room A102,2,Group Data Science 1,Thursday,08:00-11:00,"S3/5 | Amel Kacem [Web Development, JavaScript] | Room A102 cap=25>=12"
+51,3,Machine Learning Basics,4,Youssef Gharbi,1,Room A101,2,Group Data Science 1,Thursday,11:00-14:00,"S4/5 | Youssef Gharbi [Machine Learning, Python] | Room A101 cap=20>=12"
+52,3,Machine Learning Basics,3,Sara Trabelsi,4,Lab B202,2,Group Data Science 1,Thursday,14:00-17:00,"S5/5 | Sara Trabelsi [SQL, Databases] | Lab B202 cap=18>=12"
+53,3,Machine Learning Basics,6,Karim Mansour,5,Conference C301,3,Group AI Fundamentals,Wednesday,11:00-14:00,S1/5 | Karim Mansour [Cybersecurity] | Conference C301 cap=40>=10
+54,3,Machine Learning Basics,6,Karim Mansour,5,Conference C301,3,Group AI Fundamentals,Wednesday,14:00-17:00,S2/5 | Karim Mansour [Cybersecurity] | Conference C301 cap=40>=10
+55,3,Machine Learning Basics,6,Karim Mansour,5,Conference C301,3,Group AI Fundamentals,Thursday,08:00-11:00,S3/5 | Karim Mansour [Cybersecurity] | Conference C301 cap=40>=10
+56,3,Machine Learning Basics,5,Amel Kacem,2,Room A102,3,Group AI Fundamentals,Thursday,11:00-14:00,"S4/5 | Amel Kacem [Web Development, JavaScript] | Room A102 cap=25>=10"
+57,3,Machine Learning Basics,4,Youssef Gharbi,1,Room A101,3,Group AI Fundamentals,Thursday,14:00-17:00,"S5/5 | Youssef Gharbi [Machine Learning, Python] | Room A101 cap=20>=10"
+58,3,Machine Learning Basics,6,Karim Mansour,5,Conference C301,4,Group Web Development,Thursday,11:00-14:00,S1/5 | Karim Mansour [Cybersecurity] | Conference C301 cap=40>=18
+59,3,Machine Learning Basics,5,Amel Kacem,2,Room A102,4,Group Web Development,Thursday,14:00-17:00,"S2/5 | Amel Kacem [Web Development, JavaScript] | Room A102 cap=25>=18"
+60,3,Machine Learning Basics,2,Ahmed Ben Ali,4,Lab B202,4,Group Web Development,Friday,08:00-11:00,"S3/5 | Ahmed Ben Ali [Python, Data Science] | Lab B202 cap=18>=18"
+61,3,Machine Learning Basics,2,Ahmed Ben Ali,4,Lab B202,4,Group Web Development,Friday,11:00-14:00,"S4/5 | Ahmed Ben Ali [Python, Data Science] | Lab B202 cap=18>=18"
+62,3,Machine Learning Basics,2,Ahmed Ben Ali,4,Lab B202,4,Group Web Development,Friday,14:00-17:00,"S5/5 | Ahmed Ben Ali [Python, Data Science] | Lab B202 cap=18>=18"
+63,3,Machine Learning Basics,6,Karim Mansour,5,Conference C301,5,Group Cybersecurity,Thursday,14:00-17:00,S1/5 | Karim Mansour [Cybersecurity] | Conference C301 cap=40>=14
+64,3,Machine Learning Basics,3,Sara Trabelsi,3,Lab B201,5,Group Cybersecurity,Friday,08:00-11:00,"S2/5 | Sara Trabelsi [SQL, Databases] | Lab B201 cap=15>=14"
+65,3,Machine Learning Basics,3,Sara Trabelsi,3,Lab B201,5,Group Cybersecurity,Friday,11:00-14:00,"S3/5 | Sara Trabelsi [SQL, Databases] | Lab B201 cap=15>=14"
+66,3,Machine Learning Basics,3,Sara Trabelsi,3,Lab B201,5,Group Cybersecurity,Friday,14:00-17:00,"S4/5 | Sara Trabelsi [SQL, Databases] | Lab B201 cap=15>=14"
+67,3,Machine Learning Basics,4,Youssef Gharbi,1,Room A101,6,Group SQL Basics,Friday,08:00-11:00,"S1/5 | Youssef Gharbi [Machine Learning, Python] | Room A101 cap=20>=16"
+68,3,Machine Learning Basics,4,Youssef Gharbi,1,Room A101,6,Group SQL Basics,Friday,11:00-14:00,"S2/5 | Youssef Gharbi [Machine Learning, Python] | Room A101 cap=20>=16"
+69,3,Machine Learning Basics,4,Youssef Gharbi,1,Room A101,6,Group SQL Basics,Friday,14:00-17:00,"S3/5 | Youssef Gharbi [Machine Learning, Python] | Room A101 cap=20>=16"
+70,4,Web Development,5,Amel Kacem,2,Room A102,1,Group Python Beginners,Friday,08:00-11:00,"S1/4 | Amel Kacem [Web Development, JavaScript] | Room A102 cap=25>=15"
+71,4,Web Development,5,Amel Kacem,2,Room A102,1,Group Python Beginners,Friday,11:00-14:00,"S2/4 | Amel Kacem [Web Development, JavaScript] | Room A102 cap=25>=15"
+72,4,Web Development,5,Amel Kacem,2,Room A102,1,Group Python Beginners,Friday,14:00-17:00,"S3/4 | Amel Kacem [Web Development, JavaScript] | Room A102 cap=25>=15"
+73,4,Web Development,6,Karim Mansour,5,Conference C301,2,Group Data Science 1,Friday,08:00-11:00,S1/4 | Karim Mansour [Cybersecurity] | Conference C301 cap=40>=12
+74,4,Web Development,6,Karim Mansour,5,Conference C301,2,Group Data Science 1,Friday,11:00-14:00,S2/4 | Karim Mansour [Cybersecurity] | Conference C301 cap=40>=12
+75,4,Web Development,6,Karim Mansour,5,Conference C301,2,Group Data Science 1,Friday,14:00-17:00,S3/4 | Karim Mansour [Cybersecurity] | Conference C301 cap=40>=12

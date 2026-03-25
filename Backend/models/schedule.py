@@ -29,3 +29,4 @@ class ScheduleSlot(Base):
     room = relationship("Room", back_populates="slots")
     learner_group = relationship("LearnerGroup", back_populates="slots")
     allocated_equipments = relationship("Equipment", secondary="schedule_equipment", back_populates="slots")
+    constraints = relationship("Constraint", back_populates="schedule_slot")
