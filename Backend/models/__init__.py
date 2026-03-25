@@ -4,3 +4,4 @@ from .room import Room
 from .equipment import Equipment
 from .course import Course
 from .schedule import ScheduleSlot
+from .constraints import Constraint
