@@ -1,68 +1,75 @@
-:root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
+@import "tailwindcss";
+@plugin "daisyui" {
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+      themes: 
+          cupcake --default, synthwave;
 
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+};
+
+#root {
+    min-height: 100vh;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
+.app-shell {
+    min-height: 100vh;
+    background: hsl(var(--b2));
 }
 
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
+.theme-toggle-wrapper {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+.theme-toggle-btn {
+    width: 3rem;
+    height: 3rem;
+    border: 1px solid hsl(var(--bc) / 0.2);
+    border-radius: 9999px;
+    background: hsl(var(--n));
+    color: hsl(var(--nc));
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 8px 20px hsl(var(--bc) / 0.15);
+    transition: transform 120ms ease, box-shadow 120ms ease;
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+.theme-toggle-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 24px hsl(var(--bc) / 0.2);
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
+.theme-toggle-btn:focus-visible {
+    outline: 2px solid hsl(var(--p));
+    outline-offset: 2px;
 }
+
+.theme-icon {
+    width: 1.4rem;
+    height: 1.4rem;
+}
+
+.theme-toggle-wrapper::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    right: calc(100% + 0.6rem);
+    top: 50%;
+    transform: translateY(-50%);
+    background: hsl(var(--bc));
+    color: hsl(var(--b1));
+    border-radius: 0.5rem;
+    padding: 0.4rem 0.55rem;
+    font-size: 0.78rem;
+    line-height: 1;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+}
+
+.theme-toggle-wrapper:hover::after {
+    opacity: 1;
+}
+ 
