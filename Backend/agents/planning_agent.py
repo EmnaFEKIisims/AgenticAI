@@ -1,24 +1,3 @@
-"""
-agents/planning_agent.py
-========================
-Process:
-
-  CONSTRAINTS:
-    Source 1 -> DB  (Constraints table, already stored)
-    Source 2 -> User types free text (English or French)
-                   -> LLM extracts -> JSON
-    Both are merged into final constraints
-
-  DATA:
-    -> Loaded from DB if records exist
-    -> Otherwise manual JSON input from user
-
-  OUTPUT:
-    -> Schedule table printed in console
-    -> User validation (Y/N)
-    -> CSV export (Y/N)
-"""
-
 import csv
 import json
 import math
@@ -42,12 +21,12 @@ from core.LlmService import _ask_ollama
 CONSTRAINT_EXTRACTION_PROMPT = """
 You are a constraint extractor for a training planning system.
 The user describes planning wishes in natural language (English or French).
-Extract and return ONLY a valid JSON object. No markdown, no explanation.
-
-JSON format to return:
+Extract and return ONLY a valid JSON object. No markdown, no explanation, no extra text.
+ 
+Return exactly this JSON structure (fill in values, keep defaults for missing fields):
 {
   "forbidden_days": [],
-  "trainer_availability": { "<trainer_name>": "<availability description>" },
+  "trainer_availability": {},
   "session_duration_override": null,
   "min_room_capacity": null,
   "room_type_required": null,
@@ -56,17 +35,73 @@ JSON format to return:
   "prefer_matching_specialization": true,
   "other": []
 }
+ 
+Field explanations and extraction rules:
+ 
+"forbidden_days": list of strings
+  -> Days of the week where NO session can be scheduled at all.
+  -> Examples: "no Friday", "pas le vendredi", "not on weekends", "avoid Monday"
+  -> Values must be English day names: "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"
+  -> Example result: ["Friday"] or ["Saturday", "Sunday"]
+ 
+"trainer_availability": dict of { trainer_name: availability_description }
+  -> Specific days or time windows when a named trainer is available or unavailable.
+  -> The key is the trainer's name (or partial name), the value is a free description.
+  -> Examples: "Ahmed is only available Monday and Wednesday morning"
+               "Sara can only teach in the afternoon"
+               "formateur Karim disponible lundi et mardi"
+  -> Example result: {"Ahmed": "Monday and Wednesday morning", "Sara": "afternoons only"}
+ 
+"session_duration_override": integer or null
+  -> Forces ALL sessions to last exactly this number of hours, overriding the course default.
+  -> Only set this if the user explicitly mentions a duration for sessions.
+  -> Examples: "each session must be 3 hours", "sessions de 2 heures"
+  -> Example result: 3
+ 
+"min_room_capacity": integer or null
+  -> The minimum number of seats a room must have to be used.
+  -> Only rooms with capacity >= this value will be considered.
+  -> Examples: "rooms must fit at least 20 people", "salle minimum 25 places"
+  -> Example result: 20
+ 
+"room_type_required": string or null
+  -> Restricts scheduling to only rooms of a specific type.
+  -> Examples: "only use Lab rooms", "technical courses need a computer lab",
+               "salles informatiques uniquement"
+  -> Example result: "Lab" or "Classroom" or "Virtual"
+ 
+"group_priority": string or null
+  -> The name of a learner group that should be scheduled first / given priority slots.
+  -> Examples: "prioritize Group A", "schedule beginners first",
+               "Group Python Beginners en priorité"
+  -> Example result: "Group Python Beginners"
+ 
+"no_parallel_sessions_same_group": boolean
+  -> If true, the same learner group cannot attend two different sessions at the same time.
+  -> This is already the default behavior, but set to true if user explicitly mentions it.
+  -> Examples: "a group cannot be in two places at once", "no overlapping sessions for groups"
+  -> Example result: true
+ 
+"prefer_matching_specialization": boolean
+  -> If true (default), prefer assigning trainers whose specialization matches the course title.
+  -> Set to false only if the user says something like "any trainer can teach any course".
+  -> Examples: "assign trainers based on their expertise" -> true (already default, no change needed)
+               "any trainer can teach any subject" -> false
+  -> Example result: true or false
+ 
+"other": list of strings
+  -> Any constraint or wish that does not fit the above categories.
+  -> Capture it as a plain string so it is not lost.
+  -> Examples: "no two courses in the same room on the same day",
+               "lunch break between 12:00 and 14:00"
+  -> Example result: ["lunch break 12:00-14:00", "max 2 sessions per day per trainer"]
+ 
+General rules:
+- Fields not mentioned by the user -> keep their default value (null, false, [], {})
+- Day names must always be in English in the output (Monday...Friday)
+- Trainer names: use the name exactly as the user wrote it
+- If unsure which field a constraint belongs to -> put it in "other"
 
-Extraction rules:
-- Forbidden day mentioned (e.g. "no Friday", "pas le vendredi") -> add to "forbidden_days"
-- Trainer availability mentioned -> add to "trainer_availability" with trainer name as key
-- Session duration specified -> integer value in "session_duration_override"
-- Minimum room capacity mentioned -> integer value in "min_room_capacity"
-- Room type required -> string value in "room_type_required"
-- Group to prioritize -> group name in "group_priority"
-- No parallel sessions for same group -> set "no_parallel_sessions_same_group" to true
-- Anything else -> add as string in "other"
-- If a field is not mentioned -> keep its default value
 """
 
 
