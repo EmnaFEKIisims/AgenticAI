@@ -5,7 +5,9 @@ FastAPI application entry point.
 """
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from db.DB import engine, Base
+from api.DataManagerRouter import router as data_router
 
 import models.trainer
 import models.learner
@@ -18,7 +20,7 @@ import models.constraints
 from alembic.config import Config
 from alembic import command
 
-from core.LlmService import _ask_ollama
+from Services.LlmService import _ask_ollama
 from api.PlanningRouter import router as planning_router
 
 
@@ -48,7 +50,25 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# =============================================================================
+#  CORS — Allows the React frontend to send requests to this backend
+# =============================================================================
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",   # Vite default (React + Vite)
+        "http://localhost:3000",   # Create React App fallback
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],           # GET, POST, PUT, DELETE, OPTIONS
+    allow_headers=["*"],           # Content-Type, Authorization, etc.
+)
+
+# =============================================================================
+
 app.include_router(planning_router)
+app.include_router(data_router)
 
 
 @app.on_event("startup")
