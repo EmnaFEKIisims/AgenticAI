@@ -1,10 +1,21 @@
 """
 agents/planning_agent.py
 ========================
-Fix applied:
-  run(extra_constraints=None)  -> terminal mode (interactive prompts)
-  run(extra_constraints="")    -> API mode, no extra constraints (NO input() call)
-  run(extra_constraints="...") -> API mode, with constraints text
+Updated to accept ConstraintAgent output.
+
+run() now has 3 modes:
+
+  Mode 1 — ConstraintAgent output (best — fully validated constraints)
+    run(constraints_dict=result.planning_dict)
+    → skips ALL extraction steps, uses the pre-validated dict directly
+
+  Mode 2 — API / orchestrator (text constraints, no prompts)
+    run(extra_constraints="No Friday. Ahmed available Monday.")
+    → LLM extracts constraints from text, merges with DB
+
+  Mode 3 — Terminal (interactive prompts)
+    run()  or  run(extra_constraints=None)
+    → prompts user interactively via input()
 """
 
 import csv
@@ -186,7 +197,7 @@ def _slot_to_datetime(week: int, day: str, slot_start: str, slot_end: str,
 
 
 # =============================================================================
-#  STEP 1 — Load constraints from DB
+#  CONSTRAINT HELPERS  (used in Mode 2 + Mode 3 only)
 # =============================================================================
 
 def _load_constraints_from_db(db: Session) -> tuple[dict, int]:
@@ -220,10 +231,6 @@ def _load_constraints_from_db(db: Session) -> tuple[dict, int]:
     return merged, len(rows)
 
 
-# =============================================================================
-#  STEP 2 — LLM extracts constraints from user text
-# =============================================================================
-
 def _extract_constraints_from_text(user_text: str) -> dict:
     print(f"\n  [LLM] Extracting constraints from: '{user_text[:80]}'")
     try:
@@ -243,10 +250,6 @@ def _extract_constraints_from_text(user_text: str) -> dict:
         return {}
 
 
-# =============================================================================
-#  STEP 3 — Merge DB + user constraints
-# =============================================================================
-
 def _merge_constraints(db_c: dict, user_c: dict) -> dict:
     m = dict(db_c)
     m["forbidden_days"] = list(set(m["forbidden_days"] + user_c.get("forbidden_days", [])))
@@ -263,7 +266,7 @@ def _merge_constraints(db_c: dict, user_c: dict) -> dict:
 
 
 # =============================================================================
-#  STEP 4 — Load data from DB
+#  DATA LOADER
 # =============================================================================
 
 def _load_data_from_db(db: Session) -> dict | None:
@@ -287,7 +290,7 @@ def _load_data_from_db(db: Session) -> dict | None:
 
 
 # =============================================================================
-#  STEP 5 — Generate schedule
+#  SCHEDULE GENERATOR
 # =============================================================================
 
 def _generate_schedule(data: dict, constraints: dict,
@@ -356,7 +359,6 @@ def _generate_schedule(data: dict, constraints: dict,
 
         for group in data.get("groups", []):
             placed, sn = 0, 1
-
             for week in range(MAX_WEEKS):
                 if placed >= nb: break
                 for day in allowed_days:
@@ -364,10 +366,8 @@ def _generate_schedule(data: dict, constraints: dict,
                     for si, (slot_start, slot_end) in enumerate(time_slots):
                         if placed >= nb: break
                         if not is_free(group_busy, group["id"], week, day, si): continue
-
                         t = pick_trainer(course, week, day, si)
                         r = pick_room(group, week, day, si)
-
                         if t and r:
                             start_dt, end_dt = _slot_to_datetime(week, day, slot_start, slot_end, reference_date)
                             schedule.append({
@@ -456,52 +456,67 @@ class PlanningAgent:
     def __init__(self, db: Session):
         self.db = db
 
-    def run(self, extra_constraints: str | None = None) -> PlanningResult:
+    def run(
+        self,
+        extra_constraints: str | None = None,
+        constraints_dict:  dict | None = None,   # ← NEW: ConstraintAgent output
+    ) -> PlanningResult:
         """
-        Args:
-            extra_constraints:
-              None  -> TERMINAL mode  (interactive prompts via input())
-              ""    -> API mode, no extra constraints (no prompts, DB constraints only)
-              "..." -> API mode, with constraints text sent to LLM
+        3 modes depending on arguments:
 
-        Returns:
-            PlanningResult with schedule + constraints used.
+        Mode 1 — ConstraintAgent output (RECOMMENDED)
+            run(constraints_dict=agent_result.planning_dict)
+            → Skips all LLM extraction. Uses the pre-validated dict directly.
+            → Fastest + most accurate (ISO + business rules already applied).
+
+        Mode 2 — API / orchestrator with text
+            run(extra_constraints="No Friday. Ahmed available Monday.")
+            → LLM extracts from text, merges with DB constraints.
+
+        Mode 3 — Terminal (interactive)
+            run()  or  run(extra_constraints=None)
+            → Prompts user interactively via input().
         """
-        # ── Detect mode ────────────────────────────────────────────────────────
-        #   None  = terminal (interactive)
-        #   str   = API/orchestrator (never calls input())
-        terminal_mode = extra_constraints is None
+        terminal_mode = extra_constraints is None and constraints_dict is None
 
         print("\n" + "=" * 60)
         print("       PLANNING AGENT")
         print("=" * 60)
 
-        # 1. DB constraints
-        print("\n[1/5] Loading constraints from DB...")
-        db_constraints, nb_rows = _load_constraints_from_db(self.db)
-        print(f"  -> {nb_rows} constraint(s) found.")
+        # ── Resolve final constraints ──────────────────────────────────────────
 
-        # 2. User constraints — ONLY call input() in terminal mode
-        user_constraints = {}
-        if terminal_mode:
-            print("\n  Add extra constraints? (Y/N)")
-            if input("  -> ").strip().upper() == "Y":
-                text = input("  Constraints (English or French): ").strip()
-                user_constraints = _extract_constraints_from_text(text)
-        elif extra_constraints:                          # API mode + text provided
-            user_constraints = _extract_constraints_from_text(extra_constraints)
-        # else: API mode + no text -> user_constraints stays {}
+        if constraints_dict is not None:
+            # ── MODE 1: ConstraintAgent output ─────────────────────────────────
+            # Pre-validated by ConstraintAgent — skip all extraction steps.
+            print("\n[CONSTRAINTS] Using ConstraintAgent output (pre-validated).")
+            final = constraints_dict
 
-        # 3. Merge
-        print("\n[2/5] Merging constraints...")
-        final = _merge_constraints(db_constraints, user_constraints)
-        print(f"  -> forbidden_days={final['forbidden_days']}, "
-              f"session_duration={final['session_duration_override']}min, "
-              f"sessions_per_day={final['sessions_per_day']}, "
-              f"break={final['break_between_sessions_minutes']}min, "
-              f"lunch_after={final['lunch_break_after_n_sessions']} sessions")
+        else:
+            # ── MODE 2 / 3: Extract from DB + optional user text ───────────────
+            print("\n[1/5] Loading constraints from DB...")
+            db_constraints, nb_rows = _load_constraints_from_db(self.db)
+            print(f"  -> {nb_rows} constraint(s) found.")
 
-        # 4. Load data
+            user_constraints = {}
+            if terminal_mode:
+                # Mode 3: interactive
+                print("\n  Add extra constraints? (Y/N)")
+                if input("  -> ").strip().upper() == "Y":
+                    text = input("  Constraints (English or French): ").strip()
+                    user_constraints = _extract_constraints_from_text(text)
+            elif extra_constraints:
+                # Mode 2: API with text
+                user_constraints = _extract_constraints_from_text(extra_constraints)
+
+            print("\n[2/5] Merging constraints...")
+            final = _merge_constraints(db_constraints, user_constraints)
+
+        print(f"  -> forbidden_days={final.get('forbidden_days')}, "
+              f"session_duration={final.get('session_duration_override')}min, "
+              f"sessions_per_day={final.get('sessions_per_day')}, "
+              f"break={final.get('break_between_sessions_minutes')}min")
+
+        # ── Load data ──────────────────────────────────────────────────────────
         print("\n[3/5] Loading data from DB...")
         data = _load_data_from_db(self.db)
         if not data:
@@ -511,7 +526,7 @@ class PlanningAgent:
         print(f"  -> {len(data['courses'])} courses | {len(data['trainers'])} trainers | "
               f"{len(data['groups'])} groups | {len(data['rooms'])} rooms")
 
-        # 5. Generate
+        # ── Generate ───────────────────────────────────────────────────────────
         print("\n[4/5] Generating schedule...")
         schedule = _generate_schedule(data, final)
 
@@ -522,7 +537,7 @@ class PlanningAgent:
 
         print(f"\n[5/5] Done: {len(schedule)} session(s) generated.")
 
-        # Terminal mode only: display + interactive validate/export
+        # ── Terminal mode: display + validate interactively ────────────────────
         if terminal_mode:
             _print_schedule(schedule)
             if input("  Validate? (Y/N): ").strip().upper() == "Y":
@@ -530,7 +545,7 @@ class PlanningAgent:
                     path = input("  Path (Enter = outputs/schedule.csv): ").strip()
                     _export_csv(schedule, path or "outputs/schedule.csv")
             elif input("  Restart with new constraints? (Y/N): ").strip().upper() == "Y":
-                return self.run()   # recursive call, still terminal mode
+                return self.run()
 
         return PlanningResult(
             success=True,
@@ -550,6 +565,6 @@ class PlanningAgent:
 if __name__ == "__main__":
     db: Session = SessionLocal()
     try:
-        PlanningAgent(db=db).run()        # None = terminal mode
+        PlanningAgent(db=db).run()   # terminal mode
     finally:
         db.close()
