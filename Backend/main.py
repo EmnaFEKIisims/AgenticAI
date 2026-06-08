@@ -24,6 +24,7 @@ from Services.LlmService import _ask_ollama
 # Routers
 from api.DataManagerRouter import router as data_router
 from api.PlanningRouter import router as planning_router
+from api.ConstraintRouter import router as constraint_router
 
 # Orchestrator
 from orchestration.Orchestrator import Orchestrator
@@ -94,6 +95,7 @@ app.add_middleware(
 app.include_router(planning_router)
 app.include_router(data_router)
 
+app.include_router(constraint_router)
 
 
 

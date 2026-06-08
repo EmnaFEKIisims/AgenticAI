@@ -1,23 +1,3 @@
-"""
-agents/planning_agent.py
-========================
-Updated to accept ConstraintAgent output.
-
-run() now has 3 modes:
-
-  Mode 1 — ConstraintAgent output (best — fully validated constraints)
-    run(constraints_dict=result.planning_dict)
-    → skips ALL extraction steps, uses the pre-validated dict directly
-
-  Mode 2 — API / orchestrator (text constraints, no prompts)
-    run(extra_constraints="No Friday. Ahmed available Monday.")
-    → LLM extracts constraints from text, merges with DB
-
-  Mode 3 — Terminal (interactive prompts)
-    run()  or  run(extra_constraints=None)
-    → prompts user interactively via input()
-"""
-
 import csv
 import io
 import json
