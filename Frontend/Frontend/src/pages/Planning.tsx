@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { usePlanning } from "../hooks/usePlanning";
 import PlanningTable from "../components/planning/PlanningTable";
 import GroupedPlanningView from "../components/planning/GroupedPlanningView";
@@ -20,6 +20,7 @@ import {
   MoreHorizontal,
   Search,
   TrendingUp,
+  ClipboardCheck,
 } from "lucide-react";
 
 type PlanningViewMode = "global" | "group" | "trainer" | "calendar";
@@ -28,6 +29,7 @@ export default function PlanningPage() {
   const [mode, setMode] = useState<PlanningViewMode>("calendar");
   const [showReasoning, setShowReasoning] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
 
   const {
     state,
@@ -150,6 +152,20 @@ export default function PlanningPage() {
                   <div className="h-8 w-px bg-gray-200" />
                 </>
               )}
+              <button
+                onClick={() =>
+                  navigate("/pedagogical-audit", {
+                    state: {
+                      preloadedSchedule: state.schedule,
+                      preloadedConstraints: state.constraints,
+                    },
+                  })
+                }
+                className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-1.5 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
+              >
+                <ClipboardCheck className="w-4 h-4" />
+                Pedagogical report
+              </button>
               <button
                 onClick={handleReset}
                 className="text-sm text-gray-600 hover:text-gray-900 px-3 py-1.5 hover:bg-gray-100 rounded-lg transition-colors"

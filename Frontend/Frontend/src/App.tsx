@@ -5,6 +5,7 @@ import DataPage from './pages/Data.js'
 import ConstraintPage from './pages/Constraint.js'
 import PlanningPage from './pages/Planning.js'
 import StartPage from './pages/Start.js'
+import PedagogicalPage from './pages/Pedagogical.js'
 
 function App() {
   const [theme, setTheme] = useState<'cupcake' | 'synthwave'>('cupcake')
@@ -41,6 +42,7 @@ function App() {
         <Route path="/constraints" element={<ConstraintPage />} />
         <Route path="/planning" element={<PlanningPage />} />
         <Route path="/data" element={<DataPage />} />
+        <Route path="/pedagogical-audit" element={<PedagogicalPage  />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>
