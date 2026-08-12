@@ -84,6 +84,12 @@ function sortByStartTime(a: AuditPlanningItem, b: AuditPlanningItem): number {
   return aTime.localeCompare(bTime);
 }
 
+function getSessionKey(day: string, session: AuditPlanningItem, index: number): string {
+  const { start, end } = parseTimeRange(session);
+  const parts = [day, session.course, start, end, session.id ?? index];
+  return parts.map((part) => String(part)).join("-");
+}
+
 export default function AuditPlanningView({
   sessions,
   dayOrder = DEFAULT_DAY_ORDER,
@@ -125,13 +131,14 @@ export default function AuditPlanningView({
         <div className="grid gap-5 p-5 md:grid-cols-2 xl:grid-cols-3">
           {orderedDays.map((day) => {
             const daySessions = [...grouped[day]].sort(sortByStartTime);
+            const dayLabel = day === "undefined" ? "Sessions sans jour" : day;
 
             return (
               <article key={day} className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4">
-                <h4 className="text-sm font-bold uppercase tracking-[0.12em] text-slate-700">{day}</h4>
+                <h4 className="text-sm font-bold uppercase tracking-[0.12em] text-slate-700">{dayLabel}</h4>
 
                 <div className="mt-3 space-y-3">
-                  {daySessions.map((session) => {
+                  {daySessions.map((session, index) => {
                     const status = statusClasses(session.status);
                     const time = parseTimeRange(session);
                     const isSelected = selectedSessionId === session.id;
@@ -139,7 +146,7 @@ export default function AuditPlanningView({
                     return (
                       <button
                         type="button"
-                        key={session.id}
+                        key={getSessionKey(day, session, index)}
                         onClick={() => onSelectSession?.(session)}
                         className={`w-full rounded-2xl border bg-white p-3 text-left shadow-sm transition ${
                           isSelected
