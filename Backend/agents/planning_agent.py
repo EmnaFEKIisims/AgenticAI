@@ -14,7 +14,7 @@ from models.room import Room
 from models.equipment import Equipment
 from models.course import Course
 from models.constraints import Constraint
-from Services.LlmService import _ask_ollama
+from Services.Llm.LlmService import _ask_ollama
 
 
 # =============================================================================

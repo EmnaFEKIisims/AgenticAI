@@ -47,7 +47,7 @@ from Services.PedagogicalAgent.Validators.prerequisite_validator import validate
 from Services.PedagogicalAgent.Validators.teacher_validator      import validate as validate_teacher
 
 from Services.PedagogicalAgent.scoring_service import compute_full_score
-from Services.LlmService      import _ask_ollama
+from Services.Llm.LlmService import _ask_ollama
 
 
 # =============================================================================

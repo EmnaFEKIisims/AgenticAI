@@ -1,5 +1,5 @@
 import json
-from Services.LlmService import _ask_ollama
+from Services.Llm.LlmService import _ask_ollama
 from Services.constraintAgent.Schema import (
     ConstraintInput, ConstraintOutput,
     ISOConstraint, PedagogicalConstraint, UserConstraint,
