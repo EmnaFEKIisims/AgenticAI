@@ -14,6 +14,7 @@ import type {
   SessionSlot,
   Constraints,
 } from "../types/planning";
+import { normalizeDayLabel } from "../utils/planningHelpers";
 import {
   runPlanning,
   getSchedule,
@@ -51,6 +52,7 @@ interface UsePlanningReturn {
   handleRefresh:   () => Promise<void>;   // re-fetch last schedule from backend
   handleReset:     () => void;            // clear everything
   handleLoadConstraints: () => Promise<void>; // load DB constraints without running
+  hydrateSchedule: (schedule: SessionSlot[], constraints?: Constraints | null) => void;
 }
 
 
@@ -106,7 +108,14 @@ export function usePlanning(): UsePlanningReturn {
 
   // Group sessions by day  → used by a calendar/day-view component
   const sessionsByDay: Record<string, SessionSlot[]> =
-    hasSchedule ? groupBy(state.schedule, "suggested_day") : {};
+    hasSchedule
+      ? state.schedule.reduce((acc, session) => {
+          const day = normalizeDayLabel(session.suggested_day);
+          if (!acc[day]) acc[day] = [];
+          acc[day].push(session);
+          return acc;
+        }, {} as Record<string, SessionSlot[]>)
+      : {};
 
   // Group sessions by course → used by a course-breakdown component
   const sessionsByCourse: Record<string, SessionSlot[]> =
@@ -216,10 +225,24 @@ export function usePlanning(): UsePlanningReturn {
         validated: false,
       }));
     } catch (err) {
+      const message = err instanceof Error ? err.message : "Could not fetch schedule";
+
+      // Opening planning before any schedule exists should show the empty state, not an error.
+      if (/no\s+schedule\s+found|not\s+found|http\s*404/i.test(message)) {
+        setState((s) => ({
+          ...s,
+          status: "idle",
+          schedule: [],
+          error: null,
+          validated: false,
+        }));
+        return;
+      }
+
       setState((s) => ({
         ...s,
         status: "error",
-        error:  err instanceof Error ? err.message : "Could not fetch schedule",
+        error:  message,
       }));
     }
   }, []);
@@ -258,6 +281,17 @@ export function usePlanning(): UsePlanningReturn {
     }
   }, []);
 
+  const hydrateSchedule = useCallback((schedule: SessionSlot[], constraints?: Constraints | null) => {
+    setState((s) => ({
+      ...s,
+      status: "success",
+      schedule,
+      constraints: constraints ?? s.constraints,
+      error: null,
+      validated: false,
+    }));
+  }, []);
+
 
   // ── Return ──────────────────────────────────────────────────────────────────
 
@@ -285,5 +319,6 @@ export function usePlanning(): UsePlanningReturn {
     handleRefresh,
     handleReset,
     handleLoadConstraints,
+    hydrateSchedule,
   };
 }

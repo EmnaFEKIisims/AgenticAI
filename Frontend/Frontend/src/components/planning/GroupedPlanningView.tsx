@@ -6,6 +6,7 @@ import TrainerCard from "./TrainerCard";
 interface GroupedPlanningViewProps {
   schedule: SessionSlot[];
   mode: "group" | "trainer";
+  showReasoning?: boolean;
 }
 
 function groupByKey(
@@ -20,7 +21,7 @@ function groupByKey(
   }, {});
 }
 
-export default function GroupedPlanningView({ schedule, mode }: GroupedPlanningViewProps) {
+export default function GroupedPlanningView({ schedule, mode, showReasoning = false }: GroupedPlanningViewProps) {
   const grouped = useMemo(() => {
     const key = mode === "group" ? "group_name" : "trainer_name";
     return groupByKey(schedule, key);
@@ -34,10 +35,10 @@ export default function GroupedPlanningView({ schedule, mode }: GroupedPlanningV
     <section className="planning-grouped-view">
       {mode === "group"
         ? names.map((name) => (
-            <GroupCard key={name} groupName={name} sessions={grouped[name]} />
+            <GroupCard key={name} groupName={name} sessions={grouped[name]} showReasoning={showReasoning} />
           ))
         : names.map((name) => (
-            <TrainerCard key={name} trainerName={name} sessions={grouped[name]} />
+            <TrainerCard key={name} trainerName={name} sessions={grouped[name]} showReasoning={showReasoning} />
           ))}
     </section>
   );

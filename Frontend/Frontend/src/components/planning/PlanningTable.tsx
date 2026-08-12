@@ -2,10 +2,13 @@ import type { SessionSlot } from "../../types/planning";
 import Badge from "../ui/Badge";
 import Card from "../ui/Card";
 import Table, { type TableColumn } from "../ui/Table";
+import { normalizeDayLabel } from "../../utils/planningHelpers";
+import { getColorForCourse } from "../../utils/colorPalette";
 
 interface PlanningTableProps {
   schedule: SessionSlot[];
   mode?: "global" | "group" | "trainer";
+  showReasoning?: boolean;
 }
 
 const COLUMNS: Array<TableColumn<SessionSlot>> = [
@@ -41,11 +44,16 @@ function getTimeRank(timeRange: string): number {
   return Number(hour) * 60 + Number(minute);
 }
 
-export default function PlanningTable({ schedule, mode = "global" }: PlanningTableProps) {
+export default function PlanningTable({ schedule, mode = "global", showReasoning = false }: PlanningTableProps) {
   if (!schedule.length) return null;
 
+  // Filter columns based on showReasoning
+  const displayColumns = COLUMNS.filter(
+    (col) => col.key !== "reasoning" || showReasoning
+  );
+
   if (mode !== "global") {
-    const uniqueDays = Array.from(new Set(schedule.map((slot) => slot.suggested_day))).sort(
+    const uniqueDays = Array.from(new Set(schedule.map((slot) => normalizeDayLabel(slot.suggested_day)))).sort(
       (a, b) => {
         const rankA = getDayRank(a);
         const rankB = getDayRank(b);
@@ -59,7 +67,7 @@ export default function PlanningTable({ schedule, mode = "global" }: PlanningTab
     );
 
     const sessionsByCell = schedule.reduce<Record<string, SessionSlot[]>>((acc, slot) => {
-      const key = `${slot.suggested_day}__${slot.suggested_time}`;
+      const key = `${normalizeDayLabel(slot.suggested_day)}__${slot.suggested_time}`;
       if (!acc[key]) acc[key] = [];
       acc[key].push(slot);
       return acc;
@@ -94,15 +102,24 @@ export default function PlanningTable({ schedule, mode = "global" }: PlanningTab
                       {sessions.length === 0 ? (
                         <span className="planning-grid-empty">-</span>
                       ) : (
-                        sessions.map((session) => (
-                          <div key={session.session_number} className="planning-grid-session">
-                            <p className="planning-grid-primary">{session.course_title}</p>
-                            <p className="planning-grid-secondary">
-                              {mode === "group" ? session.trainer_name : session.group_name}
-                            </p>
-                            <p className="planning-grid-tertiary">Class: {session.room_name}</p>
-                          </div>
-                        ))
+                        <div className="space-y-2">
+                          {sessions.map((session) => {
+                            const courseColor = getColorForCourse(session.course_title);
+                            return (
+                              <div 
+                                key={session.session_number} 
+                                className="planning-grid-session rounded-lg p-3 text-white shadow-md"
+                                style={{ backgroundColor: courseColor }}
+                              >
+                                <p className="planning-grid-primary font-bold text-sm">{session.course_title}</p>
+                                <p className="planning-grid-secondary opacity-90 text-xs">
+                                  {mode === "group" ? session.trainer_name : session.group_name}
+                                </p>
+                                <p className="planning-grid-tertiary opacity-75 text-xs">Class: {session.room_name}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
                       )}
                     </td>
                   );
@@ -118,7 +135,7 @@ export default function PlanningTable({ schedule, mode = "global" }: PlanningTab
   return (
     <Card className="planning-table-wrapper">
       <Table
-        columns={COLUMNS}
+        columns={displayColumns}
         rows={schedule}
         tableClassName="planning-table"
         thClassName="planning-th"
@@ -132,8 +149,21 @@ export default function PlanningTable({ schedule, mode = "global" }: PlanningTab
             return <Badge className="planning-session-badge">#{row.session_number}</Badge>;
           }
 
+          if (column.key === "course_title") {
+            const courseColor = getColorForCourse(row.course_title);
+            return (
+              <div className="flex items-center gap-2">
+                <div 
+                  className="w-3 h-3 rounded-full shrink-0 shadow-sm"
+                  style={{ backgroundColor: courseColor }}
+                />
+                <span className="font-medium text-gray-900">{row.course_title}</span>
+              </div>
+            );
+          }
+
           if (column.key === "suggested_day") {
-            return <Badge className="planning-day-badge">{row.suggested_day}</Badge>;
+            return <Badge className="planning-day-badge">{normalizeDayLabel(row.suggested_day)}</Badge>;
           }
 
           if (column.key === "reasoning") {

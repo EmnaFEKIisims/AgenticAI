@@ -1,15 +1,5 @@
-"""
-agents/data_manager/extractor/llm_extractor.py
-===============================================
-Uses the LLM to classify raw records (from any file format)
-into the correct entity type and map field names to DB schema.
-
-Input  : list of raw dicts (from any parser)
-Output : list of classified dicts with entity_type + standardized fields
-"""
-
 import json
-from Services.LlmService import _ask_ollama
+from Services.Llm.LlmService import _ask_ollama
 
 
 # =============================================================================

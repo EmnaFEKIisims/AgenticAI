@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Moon, Sun } from 'lucide-react'
 import { Navigate, Route, Routes } from 'react-router-dom'
-import PlanningPage from './pages/Planning'
+import DataPage from './pages/Data.js'
+import ConstraintPage from './pages/Constraint.js'
+import PlanningPage from './pages/Planning.js'
+import StartPage from './pages/Start.js'
+import PedagogicalPage from './pages/Pedagogical.js'
 
 function App() {
   const [theme, setTheme] = useState<'cupcake' | 'synthwave'>('cupcake')
@@ -34,7 +38,11 @@ function App() {
       </div>
 
       <Routes>
-        <Route path="/" element={<PlanningPage />} />
+        <Route path="/" element={<StartPage />} />
+        <Route path="/constraints" element={<ConstraintPage />} />
+        <Route path="/planning" element={<PlanningPage />} />
+        <Route path="/data" element={<DataPage />} />
+        <Route path="/pedagogical-audit" element={<PedagogicalPage  />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>
