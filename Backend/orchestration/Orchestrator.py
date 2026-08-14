@@ -32,7 +32,13 @@ Full pipeline:
   [run_pedagogical_audit]  PedagogicalAgent (LangGraph): 6 validators + LLM
     │
     ▼
-  [show_audit_report]      Prints audit score, grade, recommendations
+  [run_anomaly_detection]  AnomalyAgent: detect → classify → resolve → notify  ← NEW
+    │
+    ▼
+  [wait_for_anomaly_hitl]  PAUSE — admin reviews anomalies                      ← NEW
+    │
+    ▼
+  [show_audit_report]      Prints audit score, grade, recommendations + anomalies
     │
     ▼
   END
@@ -43,12 +49,14 @@ from typing import TypedDict, Literal, Optional
 from langgraph.graph import StateGraph, END
 from sqlalchemy.orm import Session
 
-from agents.Data_Manager   import DataAgent, UploadResult
-from agents.planning_agent import PlanningAgent, PlanningResult
+from agents.Data_Manager      import DataAgent, UploadResult
+from agents.planning_agent    import PlanningAgent, PlanningResult
 from agents.pedagogical_agent import PedagogicalAgent
-from Services.PedagogicalAgent.Schemas.audit_schema  import AuditReport
+from agents.Anomaly           import AnomalyAgent, AnomalyAgentResult          # ← NEW
+
+from Services.PedagogicalAgent.Schemas.audit_schema    import AuditReport
 from Services.PedagogicalAgent.Schemas.Planning_schema import Planning
-from Services.DataManager.Temp_storage import TempStorage
+from Services.DataManager.Temp_storage                 import TempStorage
 
 
 # =============================================================================
@@ -73,9 +81,14 @@ class OrchestratorState(TypedDict):
     planning_result:   Optional[PlanningResult]
     schedule_status:   str           # "pending" | "validated" | "rejected"
 
-    # PedagogicalAgent outputs  ← NEW
+    # PedagogicalAgent outputs
     audit_report:      Optional[AuditReport]
     audit_status:      str           # "pending" | "done" | "skipped"
+
+    # AnomalyAgent outputs                                                      ← NEW
+    anomaly_result:      Optional[AnomalyAgentResult]
+    anomaly_status:      str         # "pending" | "reviewed" | "skipped"
+    user_anomaly_action: str         # "continue" | "abort"
 
     # Error
     error:             str
@@ -208,18 +221,10 @@ def node_wait_for_validation(state: OrchestratorState) -> dict:
 
 
 # =============================================================================
-#  NODE 6 — PedagogicalAgent  ← NEW
+#  NODE 6 — PedagogicalAgent
 # =============================================================================
 
 def node_run_pedagogical_audit(state: OrchestratorState) -> dict:
-    """
-    Runs the full Pedagogical Agent pipeline on the validated schedule.
-
-    The PedagogicalAgent is itself a LangGraph graph (nested graph):
-      load_rules → validate_workload → validate_breaks → validate_progression
-      → validate_prerequisite → validate_teacher → validate_room
-      → score → explain (LLM) → build_report
-    """
     print("\n[Orchestrator] Node: run_pedagogical_audit")
 
     planning_result = state.get("planning_result")
@@ -242,38 +247,97 @@ def node_run_pedagogical_audit(state: OrchestratorState) -> dict:
 
 
 # =============================================================================
-#  NODE 7 — Display audit report  ← NEW
+#  NODE 7 — AnomalyAgent                                                       ← NEW
+# =============================================================================
+
+def node_run_anomaly_detection(state: OrchestratorState, db: Session) -> dict:
+    print("\n[Orchestrator] Node: run_anomaly_detection")
+
+    planning_result = state.get("planning_result")
+    if not planning_result or not planning_result.schedule:
+        print("  No schedule — skipping anomaly detection.")
+        return {"anomaly_result": None, "anomaly_status": "skipped"}
+
+    try:
+        agent  = AnomalyAgent(db=db)
+        result = agent.analyze(schedule=planning_result.schedule)
+        print(f"  → {result.summary}")
+        return {"anomaly_result": result, "anomaly_status": "pending"}
+    except Exception as e:
+        print(f"  ❌ AnomalyAgent failed: {e}")
+        return {"anomaly_result": None, "anomaly_status": "skipped", "error": str(e)}
+
+
+# =============================================================================
+#  NODE 8 — HITL: admin reviews anomalies                                      ← NEW
+# =============================================================================
+
+def node_wait_for_anomaly_hitl(state: OrchestratorState) -> dict:
+    print("\n[Orchestrator] Node: wait_for_anomaly_hitl")
+
+    result = state.get("anomaly_result")
+    if not result or result.total_detected == 0:
+        print("  ✅ No anomalies — continuing automatically.")
+        return {"user_anomaly_action": "continue"}
+
+    print(f"\n  ⚠️  {result.total_detected} anomaly(ies) detected:")
+    print(f"    🔴 HIGH={result.high_count}  🟡 MEDIUM={result.medium_count}  🟢 LOW={result.low_count}")
+    for a in result.anomalies[:5]:
+        icon = {"HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🟢"}.get(
+            a.get("severity", "").upper(), "⚠️"
+        )
+        print(f"    {icon} {a.get('title')}")
+        if a.get("recommendation"):
+            print(f"         → {a['recommendation']}")
+    if result.total_detected > 5:
+        print(f"    ... and {result.total_detected - 5} more.")
+
+    answer = input("\n  Continue despite anomalies? (Y/N): ").strip().upper()
+    return {"user_anomaly_action": "continue" if answer == "Y" else "abort"}
+
+
+# =============================================================================
+#  NODE 9 — Display audit report + anomaly summary
 # =============================================================================
 
 def node_show_audit_report(state: OrchestratorState) -> dict:
-    """Prints the audit report summary in the terminal."""
     print("\n[Orchestrator] Node: show_audit_report")
 
+    # Pedagogical report
     report = state.get("audit_report")
-    if not report:
-        print("  No audit report available.")
-        return {}
+    if report:
+        W = 60
+        print(f"\n{'='*W}")
+        print(f"  PEDAGOGICAL AUDIT REPORT")
+        print(f"{'='*W}")
+        print(f"  Score       : {report.score_label}")
+        print(f"  Grade       : {report.grade.value}  ({_grade_label(report.grade.value)})")
+        print(f"  Compliant   : {'✅ Yes' if report.is_compliant else '❌ No'}")
+        print(f"  Criteria    : {report.passed_criteria}/{report.total_criteria} passed")
+        print(f"  High risks  : {report.high_violations}")
+        print(f"\n  Criteria detail:")
+        for c in report.criteria:
+            icon = "✅" if c.passed else "❌"
+            print(f"    {icon} {c.rule:<40} {c.score:.0f}/{c.weight:.0f}")
+        if report.recommendations:
+            print(f"\n  Recommendations:")
+            for i, rec in enumerate(report.recommendations[:3], 1):
+                print(f"    {i}. {rec[:100]}")
+        print(f"{'='*W}")
 
-    W = 60
-    print(f"\n{'='*W}")
-    print(f"  PEDAGOGICAL AUDIT REPORT")
-    print(f"{'='*W}")
-    print(f"  Score       : {report.score_label}")
-    print(f"  Grade       : {report.grade.value}  ({_grade_label(report.grade.value)})")
-    print(f"  Compliant   : {'✅ Yes' if report.is_compliant else '❌ No'}")
-    print(f"  Criteria    : {report.passed_criteria}/{report.total_criteria} passed")
-    print(f"  High risks  : {report.high_violations}")
-    print(f"\n  Criteria detail:")
-    for c in report.criteria:
-        icon = "✅" if c.passed else "❌"
-        print(f"    {icon} {c.rule:<40} {c.score:.0f}/{c.weight:.0f}")
+    # Anomaly summary                                                           ← NEW
+    anomaly_result = state.get("anomaly_result")
+    if anomaly_result and anomaly_result.total_detected > 0:
+        print(f"\n  ANOMALY SUMMARY")
+        print(f"  Total     : {anomaly_result.total_detected}")
+        print(f"  🔴 HIGH   : {anomaly_result.high_count}")
+        print(f"  🟡 MEDIUM : {anomaly_result.medium_count}")
+        print(f"  🟢 LOW    : {anomaly_result.low_count}")
+        print(f"  Notifs    : {len(anomaly_result.notification_ids)} created")
 
-    if report.recommendations:
-        print(f"\n  Recommendations:")
-        for i, rec in enumerate(report.recommendations[:3], 1):
-            print(f"    {i}. {rec[:100]}")
-
-    print(f"{'='*W}\n")
+    action = state.get("user_anomaly_action", "continue")
+    print(f"\n  {'✅ Planning FINALIZED' if action == 'continue' else '❌ Planning ABORTED'}")
+    print()
     return {}
 
 
@@ -288,23 +352,24 @@ def _grade_label(grade: str) -> str:
 #  ROUTING CONDITIONS
 # =============================================================================
 
-def route_after_hitl(
-    state: OrchestratorState,
-) -> Literal["ask_user_planning", "__end__"]:
+def route_after_hitl(state: OrchestratorState) -> Literal["ask_user_planning", "__end__"]:
     return "ask_user_planning" if state.get("data_status") == "approved" else "__end__"
 
 
-def route_after_ask_planning(
-    state: OrchestratorState,
-) -> Literal["run_planning", "__end__"]:
+def route_after_ask_planning(state: OrchestratorState) -> Literal["run_planning", "__end__"]:
     return "run_planning" if state.get("user_wants_planning") else "__end__"
 
 
 def route_after_validation(
     state: OrchestratorState,
 ) -> Literal["run_pedagogical_audit", "__end__"]:
-    """After schedule validation: if validated → audit, else → END."""
     return "run_pedagogical_audit" if state.get("schedule_status") == "validated" else "__end__"
+
+
+def route_after_anomaly_hitl(                                                  # ← NEW
+    state: OrchestratorState,
+) -> Literal["show_audit_report"]:
+    return "show_audit_report"   # always show report whether continue or abort
 
 
 # =============================================================================
@@ -314,44 +379,36 @@ def route_after_validation(
 def build_graph(db: Session) -> StateGraph:
     graph = StateGraph(OrchestratorState)
 
-    # ── Nodes ────────────────────────────────────────────────────────────────
     graph.add_node("upload_data",            node_upload_data)
     graph.add_node("wait_for_hitl",          node_wait_for_hitl)
     graph.add_node("ask_user_planning",      node_ask_user_planning)
     graph.add_node("run_planning",           lambda s: node_run_planning(s, db))
     graph.add_node("wait_for_validation",    node_wait_for_validation)
-    graph.add_node("run_pedagogical_audit",  node_run_pedagogical_audit)   # ← NEW
-    graph.add_node("show_audit_report",      node_show_audit_report)        # ← NEW
+    graph.add_node("run_pedagogical_audit",  node_run_pedagogical_audit)
+    graph.add_node("run_anomaly_detection",  lambda s: node_run_anomaly_detection(s, db))  # ← NEW
+    graph.add_node("wait_for_anomaly_hitl",  node_wait_for_anomaly_hitl)                   # ← NEW
+    graph.add_node("show_audit_report",      node_show_audit_report)
 
-    # ── Entry point ──────────────────────────────────────────────────────────
     graph.set_entry_point("upload_data")
-
-    # ── Edges ────────────────────────────────────────────────────────────────
     graph.add_edge("upload_data", "wait_for_hitl")
 
-    graph.add_conditional_edges(
-        "wait_for_hitl",
-        route_after_hitl,
-        {"ask_user_planning": "ask_user_planning", "__end__": END},
-    )
+    graph.add_conditional_edges("wait_for_hitl", route_after_hitl,
+        {"ask_user_planning": "ask_user_planning", "__end__": END})
 
-    graph.add_conditional_edges(
-        "ask_user_planning",
-        route_after_ask_planning,
-        {"run_planning": "run_planning", "__end__": END},
-    )
+    graph.add_conditional_edges("ask_user_planning", route_after_ask_planning,
+        {"run_planning": "run_planning", "__end__": END})
 
     graph.add_edge("run_planning", "wait_for_validation")
 
-    # ← CHANGED: was → END, now → run_pedagogical_audit (conditionally)
-    graph.add_conditional_edges(
-        "wait_for_validation",
-        route_after_validation,
-        {"run_pedagogical_audit": "run_pedagogical_audit", "__end__": END},
-    )
+    graph.add_conditional_edges("wait_for_validation", route_after_validation,
+        {"run_pedagogical_audit": "run_pedagogical_audit", "__end__": END})
 
-    graph.add_edge("run_pedagogical_audit", "show_audit_report")   # ← NEW
-    graph.add_edge("show_audit_report",     END)                    # ← NEW
+    graph.add_edge("run_pedagogical_audit", "run_anomaly_detection")           # ← NEW
+    graph.add_edge("run_anomaly_detection", "wait_for_anomaly_hitl")           # ← NEW
+    graph.add_conditional_edges("wait_for_anomaly_hitl", route_after_anomaly_hitl,
+        {"show_audit_report": "show_audit_report"})                            # ← NEW
+
+    graph.add_edge("show_audit_report", END)
 
     return graph.compile()
 
@@ -361,19 +418,6 @@ def build_graph(db: Session) -> StateGraph:
 # =============================================================================
 
 class Orchestrator:
-    """
-    Full pipeline:
-      DataAgent → HITL → PlanningAgent → HITL → PedagogicalAgent → Report
-
-    Terminal usage:
-        orchestrator = Orchestrator(db)
-        orchestrator.run(filepath, filename, extra_constraints)
-
-    API usage:
-        Each HITL step is handled by the respective API endpoints.
-        The PedagogicalAgent is triggered automatically after schedule validation.
-    """
-
     def __init__(self, db: Session):
         self.db    = db
         self.graph = build_graph(db)
@@ -385,7 +429,7 @@ class Orchestrator:
         extra_constraints: str = "",
     ) -> OrchestratorState:
         print("\n" + "=" * 60)
-        print("  ORCHESTRATOR — DataAgent + PlanningAgent + PedagogicalAgent")
+        print("  ORCHESTRATOR — DataAgent + PlanningAgent + PedagogicalAgent + AnomalyAgent")
         print("=" * 60)
 
         initial: OrchestratorState = {
@@ -398,8 +442,11 @@ class Orchestrator:
             "user_wants_planning": False,
             "planning_result":     None,
             "schedule_status":     "pending",
-            "audit_report":        None,          # ← NEW
-            "audit_status":        "pending",     # ← NEW
+            "audit_report":        None,
+            "audit_status":        "pending",
+            "anomaly_result":      None,          # ← NEW
+            "anomaly_status":      "pending",     # ← NEW
+            "user_anomaly_action": "continue",    # ← NEW
             "error":               "",
         }
 
@@ -409,10 +456,14 @@ class Orchestrator:
         print("  ORCHESTRATOR — Done")
         print(f"  Data status     : {final.get('data_status')}")
         print(f"  Schedule status : {final.get('schedule_status')}")
-        print(f"  Audit status    : {final.get('audit_status')}")   # ← NEW
+        print(f"  Audit status    : {final.get('audit_status')}")
+        print(f"  Anomaly status  : {final.get('anomaly_status')}")           # ← NEW
         if final.get("audit_report"):
             r = final["audit_report"]
             print(f"  Audit score     : {r.score_label} ({r.grade.value})")
+        if final.get("anomaly_result"):
+            a = final["anomaly_result"]
+            print(f"  Anomalies       : {a.total_detected} detected")        # ← NEW
         if final.get("error"):
             print(f"  Error           : {final['error']}")
         print("=" * 60)

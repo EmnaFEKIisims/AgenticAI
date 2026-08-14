@@ -29,6 +29,7 @@ from api.DataManagerRouter  import router as data_router
 from api.PlanningRouter     import router as planning_router
 from api.ConstraintRouter   import router as constraint_router
 from api.PedagogicalRouter  import router as pedagogical_router
+from api.AnomalyRouter  import router as anomaly_router
 
 
 def get_db():
@@ -158,6 +159,7 @@ app.include_router(planning_router)
 app.include_router(data_router)
 app.include_router(constraint_router)
 app.include_router(pedagogical_router)
+app.include_router(anomaly_router)
 
 
 @app.get("/")
