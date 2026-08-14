@@ -47,6 +47,7 @@ interface UsePedagogicalAuditReturn {
   // Actions
   runAudit:    (request: AuditRequest) => Promise<void>;
   fetchReport: (planningId: number) => Promise<void>;
+  hydrateReport: (report: AuditReport) => void;
   reset:       () => void;
 }
 
@@ -95,6 +96,10 @@ export function usePedagogicalAudit(): UsePedagogicalAuditReturn {
     }
   }, []);
 
+  const hydrateReport = useCallback((report: AuditReport) => {
+    setState({ status: "success", report, error: null });
+  }, []);
+
   // ── reset ──────────────────────────────────────────────────────────────────
   const reset = useCallback(() => setState(INITIAL), []);
 
@@ -110,6 +115,7 @@ export function usePedagogicalAudit(): UsePedagogicalAuditReturn {
     highViolations,
     runAudit,
     fetchReport,
+    hydrateReport,
     reset,
   };
 }
