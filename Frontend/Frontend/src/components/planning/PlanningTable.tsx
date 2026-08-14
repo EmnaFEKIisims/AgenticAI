@@ -11,6 +11,8 @@ interface PlanningTableProps {
   showReasoning?: boolean;
 }
 
+type CellSession = SessionSlot & { occurrenceCount: number };
+
 const COLUMNS: Array<TableColumn<SessionSlot>> = [
   { key: "session_number", label: "#" },
   { key: "course_title", label: "Course" },
@@ -42,6 +44,33 @@ function getTimeRank(timeRange: string): number {
   const [start = "99:99"] = timeRange.split("-");
   const [hour = "99", minute = "99"] = start.split(":");
   return Number(hour) * 60 + Number(minute);
+}
+
+function getCellSessionKey(session: SessionSlot): string {
+  return [
+    session.course_title,
+    session.trainer_name,
+    session.room_name,
+    session.group_name,
+  ].join("__");
+}
+
+function getCellSessions(sessions: SessionSlot[]): CellSession[] {
+  const groupedSessions = new Map<string, CellSession>();
+
+  sessions.forEach((session) => {
+    const key = getCellSessionKey(session);
+    const existing = groupedSessions.get(key);
+
+    if (existing) {
+      existing.occurrenceCount += 1;
+      return;
+    }
+
+    groupedSessions.set(key, { ...session, occurrenceCount: 1 });
+  });
+
+  return Array.from(groupedSessions.values());
 }
 
 export default function PlanningTable({ schedule, mode = "global", showReasoning = false }: PlanningTableProps) {
@@ -95,7 +124,7 @@ export default function PlanningTable({ schedule, mode = "global", showReasoning
 
                 {uniqueTimes.map((time) => {
                   const key = `${day}__${time}`;
-                  const sessions = sessionsByCell[key] ?? [];
+                  const sessions = getCellSessions(sessionsByCell[key] ?? []);
 
                   return (
                     <td key={key} className="planning-td planning-grid-slot-cell">
@@ -108,7 +137,7 @@ export default function PlanningTable({ schedule, mode = "global", showReasoning
                             return (
                               <div 
                                 key={session.session_number} 
-                                className="planning-grid-session rounded-lg p-3 text-white shadow-md"
+                                className="planning-grid-session relative rounded-lg p-3 pr-10 text-white shadow-md"
                                 style={{ backgroundColor: courseColor }}
                               >
                                 <p className="planning-grid-primary font-bold text-sm">{session.course_title}</p>
@@ -116,6 +145,14 @@ export default function PlanningTable({ schedule, mode = "global", showReasoning
                                   {mode === "group" ? session.trainer_name : session.group_name}
                                 </p>
                                 <p className="planning-grid-tertiary opacity-75 text-xs">Class: {session.room_name}</p>
+                                {session.occurrenceCount > 1 && (
+                                  <span
+                                    className="absolute bottom-2 right-2 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-semibold text-white backdrop-blur-sm"
+                                    title={`${session.occurrenceCount} session(s) in this slot`}
+                                  >
+                                    x{session.occurrenceCount}
+                                  </span>
+                                )}
                               </div>
                             );
                           })}
