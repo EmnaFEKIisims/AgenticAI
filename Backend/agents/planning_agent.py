@@ -1,3 +1,26 @@
+"""
+agents/planning_agent.py
+========================
+Fix: emploi du temps récurrent fixe.
+
+AVANT (mauvais) :
+  Semaine 1 Lundi 8h = Python   Session 1
+  Semaine 2 Lundi 8h = Web Dev  Session 1  ← cours différent chaque semaine
+
+APRÈS (correct) :
+  Semaine 1 Lundi 8h = Python   Session 1
+  Semaine 2 Lundi 8h = Python   Session 2  ← même cours, répété
+  Semaine 3 Lundi 8h = Python   Session 3
+  Semaine 4 Lundi 8h = Python   Session 4
+  → Python occupe TOUJOURS Lundi 8h
+
+Algorithme :
+  Étape 1 : Trouver un créneau fixe (jour + slot) pour chaque paire (cours × groupe)
+            → aucun groupe n'a 2 cours au même créneau
+            → aucun formateur/salle n'est double-booké au même créneau
+  Étape 2 : Répéter ce créneau fixe sur N semaines (une par séance)
+"""
+
 import csv
 import io
 import json
@@ -8,11 +31,11 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from db.DB import SessionLocal
-from models.trainer import Trainer
-from models.learner import LearnerGroup
-from models.room import Room
-from models.equipment import Equipment
-from models.course import Course
+from models.trainer     import Trainer
+from models.learner     import LearnerGroup
+from models.room        import Room
+from models.equipment   import Equipment
+from models.course      import Course
 from models.constraints import Constraint
 from Services.Llm.LlmService import _ask_ollama
 
@@ -27,6 +50,7 @@ class PlanningResult:
     total_sessions:   int
     constraints_used: dict
     schedule:         list[dict]
+    engine:           str = "greedy"
     error:            str = ""
 
 
@@ -56,68 +80,7 @@ Return exactly this JSON structure (fill in values, keep defaults for missing fi
   "prefer_matching_specialization": true,
   "other": []
 }
-
-Field explanations and extraction rules:
-
-"forbidden_days": list of strings
-  -> Days of the week where NO session can be scheduled.
-  -> Values must be English day names: "Monday", "Tuesday", "Wednesday", "Thursday", "Friday"
-  -> Example: "no Friday", "pas le vendredi" -> ["Friday"]
-
-"trainer_availability": dict { trainer_name: availability_description }
-  -> Named trainer availability. Key = trainer name, value = free description.
-  -> Example: "Ahmed available Monday morning only" -> {"Ahmed": "Monday morning"}
-
-"session_duration_override": integer or null
-  -> Duration of each session in MINUTES (not hours).
-  -> Example: "sessions of 1h30" -> 90, "2 hour sessions" -> 120, "sessions de 45 min" -> 45
-
-"sessions_per_day": integer or null
-  -> How many sessions happen per day.
-  -> Example: "5 sessions per day", "3 séances par jour" -> 3
-
-"break_between_sessions_minutes": integer or null
-  -> Short break between consecutive sessions, in minutes.
-  -> Example: "5 min break between sessions", "pause de 10 minutes" -> 10
-
-"lunch_break_after_n_sessions": integer or null
-  -> After how many sessions a lunch break is inserted.
-  -> Example: "lunch break after 3 sessions" -> 3, "après 2 séances pause déjeuner" -> 2
-
-"lunch_break_duration_minutes": integer or null
-  -> Duration of the lunch break in minutes.
-  -> Example: "40 minute lunch break", "pause déjeuner de 1h" -> 60
-
-"day_start_time": string or null
-  -> Time the first session starts, in HH:MM format (24h).
-  -> Example: "sessions start at 8am" -> "08:00", "début à 9h30" -> "09:30"
-
-"min_room_capacity": integer or null
-  -> Minimum seats a room must have.
-
-"room_type_required": string or null
-  -> Required room type e.g. "Lab", "Classroom", "Virtual"
-
-"group_priority": string or null
-  -> Name of group to schedule first.
-
-"no_parallel_sessions_same_group": boolean
-  -> If true, one group cannot attend two sessions at the same time.
-
-"prefer_matching_specialization": boolean
-  -> If true (default), prefer trainers whose specialization matches the course.
-  -> Set to false only if user says "any trainer can teach any course".
-
-"other": list of strings
-  -> Anything else that does not fit above categories.
-
-General rules:
-- Fields not mentioned -> keep default value (null, false, [], {})
-- Day names must always be in English
-- Duration values must be in MINUTES
-- Time values must be in HH:MM 24h format
 """
-
 
 # =============================================================================
 #  DEFAULTS
@@ -144,14 +107,14 @@ def _build_time_slots(constraints: dict) -> list[tuple[str, str]]:
     duration_min   = constraints.get("session_duration_override") or DEFAULT_SESSION_DURATION_MINUTES
     sessions_count = constraints.get("sessions_per_day")          or DEFAULT_SESSIONS_PER_DAY
     break_min      = constraints.get("break_between_sessions_minutes") or DEFAULT_BREAK_MINUTES
-    lunch_after    = constraints.get("lunch_break_after_n_sessions")   or DEFAULT_LUNCH_AFTER_N_SESSIONS
-    lunch_dur      = constraints.get("lunch_break_duration_minutes")   or DEFAULT_LUNCH_DURATION_MINUTES
-    start_str      = constraints.get("day_start_time")                 or DEFAULT_DAY_START_TIME
+    lunch_after    = constraints.get("lunch_break_after_n_sessions")
+    lunch_dur      = constraints.get("lunch_break_duration_minutes") or DEFAULT_LUNCH_DURATION_MINUTES
+    start_str      = constraints.get("day_start_time") or DEFAULT_DAY_START_TIME
 
     h, m   = map(int, start_str.split(":"))
     cursor = datetime(2000, 1, 1, h, m)
+    slots  = []
 
-    slots = []
     for i in range(sessions_count):
         start = cursor
         end   = cursor + timedelta(minutes=duration_min)
@@ -161,72 +124,63 @@ def _build_time_slots(constraints: dict) -> list[tuple[str, str]]:
             cursor += timedelta(minutes=break_min)
         if lunch_after and (i + 1) == lunch_after:
             cursor += timedelta(minutes=lunch_dur)
-
     return slots
 
 
-def _slot_to_datetime(week: int, day: str, slot_start: str, slot_end: str,
-                      reference_date: datetime) -> tuple[datetime, datetime]:
-    day_offset = DAY_ORDER.index(day)
-    base_date  = reference_date + timedelta(weeks=week, days=day_offset)
-    sh, sm = map(int, slot_start.split(":"))
-    eh, em = map(int, slot_end.split(":"))
-    start_dt = base_date.replace(hour=sh, minute=sm, second=0, microsecond=0)
-    end_dt   = base_date.replace(hour=eh, minute=em, second=0, microsecond=0)
-    return start_dt, end_dt
+def _slot_to_datetime(week, day, start, end, ref):
+    base = ref + timedelta(weeks=week, days=DAY_ORDER.index(day))
+    sh, sm = map(int, start.split(":"))
+    eh, em = map(int, end.split(":"))
+    return (base.replace(hour=sh, minute=sm, second=0, microsecond=0),
+            base.replace(hour=eh, minute=em, second=0, microsecond=0))
 
 
 # =============================================================================
-#  CONSTRAINT HELPERS  (used in Mode 2 + Mode 3 only)
+#  CONSTRAINT HELPERS
 # =============================================================================
 
 def _load_constraints_from_db(db: Session) -> tuple[dict, int]:
-    rows = db.query(Constraint).all()
+    rows   = db.query(Constraint).all()
     merged = {
         "forbidden_days": [], "trainer_availability": {},
         "session_duration_override": None, "sessions_per_day": None,
-        "break_between_sessions_minutes": None,
-        "lunch_break_after_n_sessions": None, "lunch_break_duration_minutes": None,
-        "day_start_time": None, "min_room_capacity": None,
-        "room_type_required": None, "group_priority": None,
-        "no_parallel_sessions_same_group": False,
+        "break_between_sessions_minutes": None, "lunch_break_after_n_sessions": None,
+        "lunch_break_duration_minutes": None, "day_start_time": None,
+        "min_room_capacity": None, "room_type_required": None,
+        "group_priority": None, "no_parallel_sessions_same_group": False,
         "prefer_matching_specialization": True, "other": []
     }
     for row in rows:
         ctype, cdata = row.constraint_type, row.constraint_data
-        if   ctype == "forbidden_days":                  merged["forbidden_days"].extend(cdata.get("days", []))
-        elif ctype == "trainer_availability":            merged["trainer_availability"].update(cdata)
-        elif ctype == "session_duration_override":       merged["session_duration_override"] = cdata.get("value")
-        elif ctype == "sessions_per_day":                merged["sessions_per_day"] = cdata.get("value")
-        elif ctype == "break_between_sessions_minutes":  merged["break_between_sessions_minutes"] = cdata.get("value")
-        elif ctype == "lunch_break_after_n_sessions":    merged["lunch_break_after_n_sessions"] = cdata.get("value")
-        elif ctype == "lunch_break_duration_minutes":    merged["lunch_break_duration_minutes"] = cdata.get("value")
-        elif ctype == "day_start_time":                  merged["day_start_time"] = cdata.get("value")
-        elif ctype == "min_room_capacity":               merged["min_room_capacity"] = cdata.get("value")
-        elif ctype == "room_type_required":              merged["room_type_required"] = cdata.get("value")
-        elif ctype == "group_priority":                  merged["group_priority"] = cdata.get("value")
-        elif ctype == "no_parallel_sessions_same_group": merged["no_parallel_sessions_same_group"] = cdata.get("value", False)
-        elif ctype == "prefer_matching_specialization":  merged["prefer_matching_specialization"] = cdata.get("value", True)
-        else:                                            merged["other"].append(cdata)
+        if   ctype == "forbidden_days":                   merged["forbidden_days"].extend(cdata.get("days", []))
+        elif ctype == "trainer_availability":             merged["trainer_availability"].update(cdata)
+        elif ctype == "session_duration_override":        merged["session_duration_override"] = cdata.get("value")
+        elif ctype == "sessions_per_day":                 merged["sessions_per_day"] = cdata.get("value")
+        elif ctype == "break_between_sessions_minutes":   merged["break_between_sessions_minutes"] = cdata.get("value")
+        elif ctype == "lunch_break_after_n_sessions":     merged["lunch_break_after_n_sessions"] = cdata.get("value")
+        elif ctype == "lunch_break_duration_minutes":     merged["lunch_break_duration_minutes"] = cdata.get("value")
+        elif ctype == "day_start_time":                   merged["day_start_time"] = cdata.get("value")
+        elif ctype == "min_room_capacity":                merged["min_room_capacity"] = cdata.get("value")
+        elif ctype == "room_type_required":               merged["room_type_required"] = cdata.get("value")
+        elif ctype == "group_priority":                   merged["group_priority"] = cdata.get("value")
+        elif ctype == "no_parallel_sessions_same_group":  merged["no_parallel_sessions_same_group"] = cdata.get("value", False)
+        elif ctype == "prefer_matching_specialization":   merged["prefer_matching_specialization"] = cdata.get("value", True)
+        else:                                             merged["other"].append(cdata)
     return merged, len(rows)
 
 
 def _extract_constraints_from_text(user_text: str) -> dict:
     print(f"\n  [LLM] Extracting constraints from: '{user_text[:80]}'")
     try:
-        raw = _ask_ollama(prompt=user_text, system=CONSTRAINT_EXTRACTION_PROMPT)
-        print(f"  [LLM raw]: {raw[:300]}")
+        raw     = _ask_ollama(prompt=user_text, system=CONSTRAINT_EXTRACTION_PROMPT)
         cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-        start = cleaned.find("{")
-        end   = cleaned.rfind("}") + 1
+        start   = cleaned.find("{")
+        end     = cleaned.rfind("}") + 1
         if start == -1 or end == 0:
-            print("  [WARNING] No JSON found. Using defaults.")
             return {}
-        result = json.loads(cleaned[start:end])
-        print(f"  [LLM] Extracted: {result}")
-        return result
+        return json.loads(cleaned[start:end])
     except Exception as e:
-        print(f"  [WARNING] Extraction failed: {e}")
+        print(f"  [WARNING] {e}")
         return {}
 
 
@@ -239,8 +193,10 @@ def _merge_constraints(db_c: dict, user_c: dict) -> dict:
               "min_room_capacity", "room_type_required", "group_priority"]:
         if user_c.get(k) is not None:
             m[k] = user_c[k]
-    if user_c.get("no_parallel_sessions_same_group"):        m["no_parallel_sessions_same_group"] = True
-    if user_c.get("prefer_matching_specialization") is False: m["prefer_matching_specialization"] = False
+    if user_c.get("no_parallel_sessions_same_group"):
+        m["no_parallel_sessions_same_group"] = True
+    if user_c.get("prefer_matching_specialization") is False:
+        m["prefer_matching_specialization"] = False
     m["other"] = m.get("other", []) + user_c.get("other", [])
     return m
 
@@ -258,152 +214,245 @@ def _load_data_from_db(db: Session) -> dict | None:
     if not any([trainers, groups, rooms, courses]):
         return None
     return {
-        "courses":    [{"id":c.id,"title":c.title,"total_hours":c.total_hours,
-                        "session_duration":c.session_duration,
-                        "required_equipments":[e.name for e in c.required_equipments]} for c in courses],
-        "trainers":   [{"id":t.id,"name":t.name,"specialization":t.specialization or "",
-                        "availability_notes":t.availability_notes or ""} for t in trainers],
-        "groups":     [{"id":g.id,"name":g.name,"size":g.size,"level":g.level or ""} for g in groups],
-        "rooms":      [{"id":r.id,"name":r.name,"capacity":r.capacity,"room_type":r.room_type or ""} for r in rooms],
-        "equipments": [{"id":e.id,"name":e.name,"total_quantity":e.total_quantity} for e in equipments],
+        "courses":  [{"id": c.id, "title": c.title, "total_hours": c.total_hours,
+                      "session_duration": c.session_duration,
+                      "required_equipments": [e.name for e in c.required_equipments]}
+                     for c in courses],
+        "trainers": [{"id": t.id, "name": t.name, "specialization": t.specialization or "",
+                      "availability_notes": t.availability_notes or ""} for t in trainers],
+        "groups":   [{"id": g.id, "name": g.name, "size": g.size, "level": g.level or ""}
+                     for g in groups],
+        "rooms":    [{"id": r.id, "name": r.name, "capacity": r.capacity,
+                      "room_type": r.room_type or ""} for r in rooms],
+        "equipments": [{"id": e.id, "name": e.name, "total_quantity": e.total_quantity}
+                       for e in equipments],
     }
 
 
 # =============================================================================
-#  SCHEDULE GENERATOR
+#  FIXED RECURRING SCHEDULE GENERATOR
+#
+#  Emploi du temps récurrent fixe — le modèle correct.
+#
+#  Étape 1 — Attribution fixe :
+#    Pour chaque paire (cours × groupe), trouver UN créneau fixe (jour + slot)
+#    + UN formateur + UNE salle.
+#    Ce créneau sera utilisé TOUTES les semaines pour ce cours.
+#
+#    Contraintes à respecter sur le créneau fixe :
+#      - Un groupe ne peut pas avoir 2 cours au même créneau
+#      - Un formateur ne peut pas enseigner 2 cours au même créneau
+#      - Une salle ne peut pas accueillir 2 cours au même créneau
+#
+#  Étape 2 — Répétition sur N semaines :
+#    Le créneau fixe est répété N fois (N = nombre de séances du cours).
+#    Résultat : Python est TOUJOURS Lundi 8h (semaines 1, 2, 3, 4...)
 # =============================================================================
 
-def _generate_schedule(data: dict, constraints: dict,
-                       reference_date: datetime | None = None) -> list[dict]:
+def _generate_schedule_recurring(
+    data:           dict,
+    constraints:    dict,
+    reference_date: datetime | None = None,
+) -> list[dict]:
+
     if reference_date is None:
         today          = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         days_to_mon    = (7 - today.weekday()) % 7 or 7
         reference_date = today + timedelta(days=days_to_mon)
 
-    time_slots = _build_time_slots(constraints)
-    print(f"\n  [Agent] Time slots ({len(time_slots)} per day):")
-    for s, e in time_slots:
-        print(f"    {s} -> {e}")
-
+    # ── Setup ──────────────────────────────────────────────────────────────────
+    time_slots   = _build_time_slots(constraints)
     forbidden    = [d.lower() for d in constraints.get("forbidden_days", [])]
-    allowed_days = [d for d in DAY_ORDER
-                    if d.lower() not in forbidden and DAY_FR[d].lower() not in forbidden]
+    allowed_days = [
+        d for d in DAY_ORDER
+        if d.lower() not in forbidden and DAY_FR[d].lower() not in forbidden
+    ]
 
-    min_cap       = constraints.get("min_room_capacity")
-    room_type_req = (constraints.get("room_type_required") or "").lower()
-    trainer_avail = {k.lower(): v.lower() for k, v in constraints.get("trainer_availability", {}).items()}
-    prefer_match  = constraints.get("prefer_matching_specialization", True)
+    session_duration = constraints.get("session_duration_override") or DEFAULT_SESSION_DURATION_MINUTES
+    prefer_match     = constraints.get("prefer_matching_specialization", True)
+    min_cap          = constraints.get("min_room_capacity")
+    room_type_req    = (constraints.get("room_type_required") or "").lower()
 
-    trainer_busy: dict = {}
-    room_busy:    dict = {}
-    group_busy:   dict = {}
+    trainer_avail = {
+        k.lower(): v.lower()
+        for k, v in constraints.get("trainer_availability", {}).items()
+    }
 
-    def is_free(t, eid, w, d, si): return not t.get((eid, w, d, si), False)
-    def book(t, eid, w, d, si):    t[(eid, w, d, si)] = True
-
-    rooms = data.get("rooms", [])
-    if min_cap:
-        rooms = [r for r in rooms if r["capacity"] >= min_cap]
-    if room_type_req:
-        f = [r for r in rooms if room_type_req in r.get("room_type", "").lower()]
-        if f: rooms = f
-
-    def trainer_ok(trainer, day):
+    def trainer_available_on(trainer: dict, day: str) -> bool:
         name = trainer["name"].lower()
         for key, avail in trainer_avail.items():
             if key in name:
-                if day.lower() in avail or DAY_FR.get(day, "").lower() in avail: return True
-                all_days = [x.lower() for x in DAY_ORDER] + list(DAY_FR.values())
-                if any(d in avail for d in all_days): return False
+                day_l  = day.lower()
+                day_fr = DAY_FR.get(day, "").lower()
+                any_day_in_avail = any(
+                    d in avail
+                    for d in [x.lower() for x in DAY_ORDER] + list(DAY_FR.values())
+                )
+                if any_day_in_avail:
+                    return day_l in avail or day_fr in avail
         return True
 
-    def pick_trainer(course, week, day, si):
-        for t in sorted(data.get("trainers", []),
-                        key=lambda t: course["title"].lower() in t.get("specialization", "").lower(),
-                        reverse=prefer_match):
-            if trainer_ok(t, day) and is_free(trainer_busy, t["id"], week, day, si):
-                return t
-        return None
+    # Filter rooms
+    all_rooms = data.get("rooms", [])
+    if min_cap:
+        all_rooms = [r for r in all_rooms if r["capacity"] >= min_cap]
+    if room_type_req:
+        f = [r for r in all_rooms if room_type_req in r.get("room_type", "").lower()]
+        if f:
+            all_rooms = f
 
-    def pick_room(group, week, day, si):
-        for r in sorted([r for r in rooms if r["capacity"] >= group["size"]], key=lambda r: r["capacity"]):
-            if is_free(room_busy, r["id"], week, day, si): return r
-        return None
+    # ── ÉTAPE 1 : Attribution des créneaux fixes ──────────────────────────────
+    #
+    # On cherche pour chaque (cours × groupe) un créneau (jour + slot_idx)
+    # unique, avec formateur et salle disponibles à ce créneau toutes les semaines.
+    #
+    # Les sets ci-dessous représentent les créneaux DÉJÀ PRIS (permanents) :
+    #   (jour, slot_idx) → occupation permanente sur toutes les semaines
+    #
+    # Un (jour, slot_idx) pris par le groupe A ne peut pas être pris par le groupe A
+    # pour un autre cours.
+    # Un (jour, slot_idx) pris par formateur X ne peut pas être pris par X pour
+    # un autre cours.
 
-    schedule, sg = [], 1
+    # Créneaux permanents occupés par (groupe, jour, slot_idx)
+    group_fixed_slots:   dict[int, set] = {}   # group_id → set of (day, slot_idx)
+    trainer_fixed_slots: dict[int, set] = {}   # trainer_id → set of (day, slot_idx)
+    room_fixed_slots:    dict[int, set] = {}   # room_id → set of (day, slot_idx)
 
+    # Attribution : (course_id, group_id) → (day, slot_idx, trainer, room, nb_sessions)
+    fixed_assignments: dict[tuple, tuple] = {}
+
+    # Construire toutes les paires (cours × groupe)
+    pairs = []
     for course in data.get("courses", []):
-        course_dur_min = (constraints.get("session_duration_override")
-                          or int(course.get("session_duration", 3) * 60))
-        nb = math.ceil((course["total_hours"] * 60) / course_dur_min)
-
+        course_dur = session_duration or int(course.get("session_duration", 3) * 60)
+        nb         = math.ceil((course["total_hours"] * 60) / course_dur)
         for group in data.get("groups", []):
-            placed, sn = 0, 1
-            for week in range(MAX_WEEKS):
-                if placed >= nb: break
-                for day in allowed_days:
-                    if placed >= nb: break
-                    for si, (slot_start, slot_end) in enumerate(time_slots):
-                        if placed >= nb: break
-                        if not is_free(group_busy, group["id"], week, day, si): continue
-                        t = pick_trainer(course, week, day, si)
-                        r = pick_room(group, week, day, si)
-                        if t and r:
-                            start_dt, end_dt = _slot_to_datetime(week, day, slot_start, slot_end, reference_date)
-                            schedule.append({
-                                "course_id":               course["id"],
-                                "trainer_id":              t["id"],
-                                "room_id":                 r["id"],
-                                "learner_group_id":        group["id"],
-                                "start_time":              start_dt.isoformat(),
-                                "end_time":                end_dt.isoformat(),
-                                "status":                  "draft",
-                                "is_validated":            False,
-                                "quality_score":           0.0,
-                                "pedagogical_audit_score": 0.0,
-                                "session_number":          sg,
-                                "course_title":            course["title"],
-                                "trainer_name":            t["name"],
-                                "room_name":               r["name"],
-                                "group_name":              group["name"],
-                                "suggested_day":           f"Week {week+1} — {day}",
-                                "suggested_time":          f"{slot_start} → {slot_end}",
-                                "reasoning": (
-                                    f"S{sn}/{nb} | W{week+1} | "
-                                    f"{t['name']} [{t.get('specialization','')}] | "
-                                    f"{r['name']} cap={r['capacity']}>={group['size']}"
-                                )
-                            })
-                            book(trainer_busy, t["id"], week, day, si)
-                            book(room_busy,    r["id"], week, day, si)
-                            book(group_busy, group["id"], week, day, si)
-                            placed += 1; sn += 1; sg += 1
+            pairs.append((course, group, nb))
 
-            if placed < nb:
-                print(f"  [WARNING] {placed}/{nb} sessions placed for '{course['title']}'/'{group['name']}'")
+    total_available_slots = len(allowed_days) * len(time_slots)
+    print(f"  [Greedy] {len(pairs)} pairs à placer | {total_available_slots} créneaux disponibles")
 
+    unplaced_pairs = []
+
+    for course, group, nb in pairs:
+        placed = False
+
+        # Trier les formateurs par spécialisation correspondante
+        sorted_trainers = sorted(
+            data.get("trainers", []),
+            key=lambda t: course["title"].lower() in t.get("specialization", "").lower(),
+            reverse=prefer_match,
+        )
+
+        # Rooms valides pour ce groupe
+        valid_rooms = [r for r in all_rooms if r["capacity"] >= group["size"]]
+
+        for day in allowed_days:
+            if placed: break
+            for slot_idx, (slot_start, slot_end) in enumerate(time_slots):
+                if placed: break
+
+                # ── Vérifier que le groupe est libre à ce créneau ─────────────
+                g_used = group_fixed_slots.get(group["id"], set())
+                if (day, slot_idx) in g_used:
+                    continue   # groupe déjà occupé à ce créneau
+
+                # ── Trouver un formateur libre à ce créneau ───────────────────
+                trainer = None
+                for t in sorted_trainers:
+                    if not trainer_available_on(t, day):
+                        continue
+                    t_used = trainer_fixed_slots.get(t["id"], set())
+                    if (day, slot_idx) not in t_used:
+                        trainer = t
+                        break
+
+                if trainer is None:
+                    continue
+
+                # ── Trouver une salle libre à ce créneau ──────────────────────
+                room = None
+                for r in sorted(valid_rooms, key=lambda r: r["capacity"]):
+                    r_used = room_fixed_slots.get(r["id"], set())
+                    if (day, slot_idx) not in r_used:
+                        room = r
+                        break
+
+                if room is None:
+                    continue
+
+                # ── Créneau trouvé → l'attribuer définitivement ───────────────
+                group_fixed_slots.setdefault(group["id"], set()).add((day, slot_idx))
+                trainer_fixed_slots.setdefault(trainer["id"], set()).add((day, slot_idx))
+                room_fixed_slots.setdefault(room["id"], set()).add((day, slot_idx))
+
+                fixed_assignments[(course["id"], group["id"])] = (
+                    day, slot_idx, slot_start, slot_end, trainer, room, nb
+                )
+                placed = True
+
+        if not placed:
+            unplaced_pairs.append(f"{course['title']} × {group['name']}")
+
+    if unplaced_pairs:
+        print(f"  [Greedy] ⚠️  {len(unplaced_pairs)} paire(s) sans créneau :")
+        for u in unplaced_pairs[:5]:
+            print(f"    - {u}")
+        if len(allowed_days) * len(time_slots) < len(pairs):
+            print(f"  [Greedy] 💡 Suggestion : augmenter sessions_per_day ou réduire le nombre de cours.")
+
+    # ── ÉTAPE 2 : Répéter le créneau fixe sur N semaines ─────────────────────
+    schedule  = []
+    global_sn = 1
+
+    for (course_id, group_id), (day, slot_idx, slot_start, slot_end, trainer, room, nb) in fixed_assignments.items():
+        # Récupérer les objets cours et groupe
+        course = next(c for c in data["courses"] if c["id"] == course_id)
+        group  = next(g for g in data["groups"]  if g["id"] == group_id)
+
+        for week in range(nb):
+            # Semaine week (0-indexed) → Semaine week+1 (display)
+            start_dt, end_dt = _slot_to_datetime(week, day, slot_start, slot_end, reference_date)
+
+            schedule.append({
+                # Champs DB
+                "course_id":               course_id,
+                "trainer_id":              trainer["id"],
+                "room_id":                 room["id"],
+                "learner_group_id":        group_id,
+                "start_time":              start_dt.isoformat(),
+                "end_time":                end_dt.isoformat(),
+                "status":                  "draft",
+                "is_validated":            False,
+                "quality_score":           0.0,
+                "pedagogical_audit_score": 0.0,
+                # Champs d'affichage
+                "session_number":  global_sn,
+                "course_title":    course["title"],
+                "trainer_name":    trainer["name"],
+                "room_name":       room["name"],
+                "group_name":      group["name"],
+                "suggested_day":   f"Week {week + 1} — {day}",
+                "suggested_time":  f"{slot_start} → {slot_end}",
+                "reasoning": (
+                    f"Récurrent | {group['name']} | "
+                    f"{course['title']} = {day} {slot_start} fixe | "
+                    f"Séance {week+1}/{nb} | "
+                    f"{trainer['name']} | {room['name']}"
+                ),
+            })
+            global_sn += 1
+
+    # Trier par semaine puis par jour puis par heure
+    schedule.sort(key=lambda s: s["start_time"])
+    print(f"  [Greedy] ✅ {len(schedule)} séances planifiées sur {MAX_WEEKS} semaines max.")
     return schedule
 
 
 # =============================================================================
-#  DISPLAY + EXPORT
+#  EXPORT CSV
 # =============================================================================
-
-def _print_schedule(schedule: list[dict]):
-    W = 132
-    print(f"\n{'=' * W}")
-    print("  GENERATED SCHEDULE — Planning Agent")
-    print(f"{'=' * W}")
-    print(f"  {'#':<4} {'Course':<18} {'Trainer':<20} {'Room':<16} {'Group':<15} {'Day':<22} {'Time':<18} Reasoning")
-    print(f"  {'-' * W}")
-    for s in schedule:
-        print(f"  {s['session_number']:<4} {str(s['course_title'])[:17]:<18} "
-              f"{str(s['trainer_name'])[:19]:<20} {str(s['room_name'])[:15]:<16} "
-              f"{str(s['group_name'])[:14]:<15} {str(s['suggested_day'])[:21]:<22} "
-              f"{str(s['suggested_time'])[:17]:<18} {str(s['reasoning'])[:45]}")
-    print(f"{'=' * W}")
-    print(f"  Total: {len(schedule)} session(s)\n")
-
 
 FIELDNAMES = [
     "session_number", "course_id", "course_title", "trainer_id", "trainer_name",
@@ -419,13 +468,6 @@ def schedule_to_csv_bytes(schedule: list[dict]) -> bytes:
     writer.writerows(schedule)
     return output.getvalue().encode("utf-8")
 
-def _export_csv(schedule: list[dict], filepath: str):
-    folder = os.path.dirname(filepath)
-    if folder: os.makedirs(folder, exist_ok=True)
-    with open(filepath, "w", newline="", encoding="utf-8") as f:
-        f.write(schedule_to_csv_bytes(schedule).decode("utf-8"))
-    print(f"  [SAVED] -> {os.path.abspath(filepath)}")
-
 
 # =============================================================================
 #  PLANNING AGENT
@@ -439,62 +481,32 @@ class PlanningAgent:
     def run(
         self,
         extra_constraints: str | None = None,
-        constraints_dict:  dict | None = None,   # ← NEW: ConstraintAgent output
+        constraints_dict:  dict | None = None,
     ) -> PlanningResult:
-        """
-        3 modes depending on arguments:
 
-        Mode 1 — ConstraintAgent output (RECOMMENDED)
-            run(constraints_dict=agent_result.planning_dict)
-            → Skips all LLM extraction. Uses the pre-validated dict directly.
-            → Fastest + most accurate (ISO + business rules already applied).
-
-        Mode 2 — API / orchestrator with text
-            run(extra_constraints="No Friday. Ahmed available Monday.")
-            → LLM extracts from text, merges with DB constraints.
-
-        Mode 3 — Terminal (interactive)
-            run()  or  run(extra_constraints=None)
-            → Prompts user interactively via input().
-        """
         terminal_mode = extra_constraints is None and constraints_dict is None
 
         print("\n" + "=" * 60)
         print("       PLANNING AGENT")
         print("=" * 60)
 
-        # ── Resolve final constraints ──────────────────────────────────────────
-
+        # ── Constraints ────────────────────────────────────────────────────────
         if constraints_dict is not None:
-            # ── MODE 1: ConstraintAgent output ─────────────────────────────────
-            # Pre-validated by ConstraintAgent — skip all extraction steps.
-            print("\n[CONSTRAINTS] Using ConstraintAgent output (pre-validated).")
+            print("\n[CONSTRAINTS] Using ConstraintAgent output.")
             final = constraints_dict
-
         else:
-            # ── MODE 2 / 3: Extract from DB + optional user text ───────────────
             print("\n[1/5] Loading constraints from DB...")
             db_constraints, nb_rows = _load_constraints_from_db(self.db)
-            print(f"  -> {nb_rows} constraint(s) found.")
-
+            print(f"  -> {nb_rows} constraint(s).")
             user_constraints = {}
             if terminal_mode:
-                # Mode 3: interactive
-                print("\n  Add extra constraints? (Y/N)")
-                if input("  -> ").strip().upper() == "Y":
-                    text = input("  Constraints (English or French): ").strip()
+                if input("  Add extra constraints? (Y/N): ").strip().upper() == "Y":
+                    text = input("  Constraints: ").strip()
                     user_constraints = _extract_constraints_from_text(text)
             elif extra_constraints:
-                # Mode 2: API with text
                 user_constraints = _extract_constraints_from_text(extra_constraints)
-
             print("\n[2/5] Merging constraints...")
             final = _merge_constraints(db_constraints, user_constraints)
-
-        print(f"  -> forbidden_days={final.get('forbidden_days')}, "
-              f"session_duration={final.get('session_duration_override')}min, "
-              f"sessions_per_day={final.get('sessions_per_day')}, "
-              f"break={final.get('break_between_sessions_minutes')}min")
 
         # ── Load data ──────────────────────────────────────────────────────────
         print("\n[3/5] Loading data from DB...")
@@ -503,35 +515,56 @@ class PlanningAgent:
             return PlanningResult(success=False, total_sessions=0,
                                   constraints_used=final, schedule=[],
                                   error="No data in DB.")
-        print(f"  -> {len(data['courses'])} courses | {len(data['trainers'])} trainers | "
-              f"{len(data['groups'])} groups | {len(data['rooms'])} rooms")
+        print(f"  -> {len(data['courses'])} cours | {len(data['trainers'])} formateurs | "
+              f"{len(data['groups'])} groupes | {len(data['rooms'])} salles")
 
         # ── Generate ───────────────────────────────────────────────────────────
         print("\n[4/5] Generating schedule...")
-        schedule = _generate_schedule(data, final)
+        schedule = None
+        engine   = "greedy"
+
+        # Try OR-Tools first
+        try:
+            from agents.planner import Planner
+            schedule = Planner(time_limit_seconds=30).solve(data, final)
+            if schedule:
+                engine = "ortools"
+                print(f"  ✅ OR-Tools: {len(schedule)} séances.")
+        except ImportError:
+            print("  [INFO] ortools not installed → greedy. (pip install ortools)")
+        except Exception as e:
+            print(f"  [WARNING] OR-Tools error: {e}")
+
+        # Greedy fallback (recurring model)
+        if not schedule:
+            print("  [Greedy] Modèle récurrent fixe...")
+            schedule = _generate_schedule_recurring(data, final)
+            engine   = "greedy"
 
         if not schedule:
             return PlanningResult(success=False, total_sessions=0,
                                   constraints_used=final, schedule=[],
-                                  error="No sessions could be scheduled with these constraints.")
+                                  error="Aucune séance planifiable.")
 
-        print(f"\n[5/5] Done: {len(schedule)} session(s) generated.")
+        print(f"\n[5/5] Done: {len(schedule)} séances [{engine}].")
 
-        # ── Terminal mode: display + validate interactively ────────────────────
         if terminal_mode:
-            _print_schedule(schedule)
-            if input("  Validate? (Y/N): ").strip().upper() == "Y":
-                if input("  Export CSV? (Y/N): ").strip().upper() == "Y":
-                    path = input("  Path (Enter = outputs/schedule.csv): ").strip()
-                    _export_csv(schedule, path or "outputs/schedule.csv")
-            elif input("  Restart with new constraints? (Y/N): ").strip().upper() == "Y":
-                return self.run()
+            for s in schedule[:5]:
+                print(f"  #{s['session_number']} | {s['course_title']} | "
+                      f"{s['group_name']} | {s['suggested_day']} {s['suggested_time']}")
+            if input("  Export CSV? (Y/N): ").strip().upper() == "Y":
+                path = input("  Path: ").strip() or "outputs/schedule.csv"
+                os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+                with open(path, "w", newline="", encoding="utf-8") as f:
+                    f.write(schedule_to_csv_bytes(schedule).decode("utf-8"))
+                print(f"  Saved → {path}")
 
         return PlanningResult(
-            success=True,
-            total_sessions=len(schedule),
-            constraints_used=final,
-            schedule=schedule,
+            success          = True,
+            total_sessions   = len(schedule),
+            constraints_used = final,
+            schedule         = schedule,
+            engine           = engine,
         )
 
     def get_constraints(self) -> tuple[dict, int]:
@@ -539,12 +572,12 @@ class PlanningAgent:
 
 
 # =============================================================================
-#  ENTRY POINT
+#  TERMINAL
 # =============================================================================
 
 if __name__ == "__main__":
     db: Session = SessionLocal()
     try:
-        PlanningAgent(db=db).run()   # terminal mode
+        PlanningAgent(db=db).run()
     finally:
         db.close()
