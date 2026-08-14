@@ -60,8 +60,6 @@ export default function ConstraintPage() {
 
   // ── Generate — calls ConstraintAgent backend ────────────────────────────────
   const handleGenerate = useCallback(async () => {
-    if (!form.pedagogicalText.trim() && !form.userText.trim()) return;
-
     setState({ ...INITIAL_STATE, status: "loading" });
 
     try {

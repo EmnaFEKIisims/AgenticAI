@@ -153,6 +153,7 @@ export default function PlanningPage() {
                 </>
               )}
               <button
+                type="button"
                 onClick={() =>
                   navigate("/pedagogical-audit", {
                     state: {
@@ -167,6 +168,18 @@ export default function PlanningPage() {
                 Pedagogical report
               </button>
               <button
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  navigate("/anomaly");
+                }}
+                className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-1.5 text-sm font-medium text-rose-700 transition-colors hover:bg-rose-100"
+              >
+                <CircleAlert className="w-4 h-4" />
+                Anomaly report
+              </button>
+              <button
+                type="button"
                 onClick={handleReset}
                 className="text-sm text-gray-600 hover:text-gray-900 px-3 py-1.5 hover:bg-gray-100 rounded-lg transition-colors"
               >

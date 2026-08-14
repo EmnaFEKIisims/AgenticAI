@@ -11,7 +11,7 @@
 //   <CriteriaTable />      ← tableau cliquable de tous les critères
 //   <RecommendationList /> ← liste numérotée des recommandations
 
-import { useState }            from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation }         from "react-router-dom";
 
 import AuditHeader             from "../components/pedagogical/AuditHeader";
@@ -23,17 +23,69 @@ import RecommendationList      from "../components/pedagogical/RecommendationLis
 import CriterionCard           from "../components/pedagogical/CriterionCard";
 
 import { usePedagogicalAudit } from "../hooks/usepedagogicalAudit";
+import type { AuditPlanningItem } from "../components/pedagogical/AuditPlanningView";
 import type { CriterionResult } from "../types/pedagogical";
 import type { SessionSlot, Constraints } from "../types/planning";
 
 
+const PEDAGOGICAL_CACHE_KEY = "pedagogical-audit-cache-v1";
+
+function toAuditPlanningItem(slot: SessionSlot, index: number): AuditPlanningItem {
+  const [start = "--:--", end = "--:--"] = slot.suggested_time
+    .split("-")
+    .map((part) => part.trim());
+
+  return {
+    id: slot.session_number ?? index,
+    day: slot.suggested_day || "undefined",
+    course: slot.course_title,
+    start,
+    end,
+    time: slot.suggested_time,
+    trainer: slot.trainer_name,
+    room: slot.room_name,
+    status: "passed",
+    insight: slot.reasoning,
+  };
+}
+
+function readCachedAudit(): { schedule: SessionSlot[]; report: ReturnType<typeof JSON.parse> | null } {
+  if (typeof window === "undefined") {
+    return { schedule: [], report: null };
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(PEDAGOGICAL_CACHE_KEY);
+    if (!raw) {
+      return { schedule: [], report: null };
+    }
+
+    const parsed = JSON.parse(raw) as {
+      schedule?: SessionSlot[];
+      report?: unknown;
+    };
+
+    return {
+      schedule: Array.isArray(parsed.schedule) ? parsed.schedule : [],
+      report: parsed.report ?? null,
+    };
+  } catch {
+    return { schedule: [], report: null };
+  }
+}
+
+
 export default function PedagogicalAuditPage() {
   const location = useLocation();
+  const cachedAudit = readCachedAudit();
   const navState = location.state as {
     preloadedSchedule?: SessionSlot[];
     preloadedConstraints?: Constraints | null;
   } | null;
-  const preloadedSchedule = Array.isArray(navState?.preloadedSchedule) ? navState.preloadedSchedule : [];
+  const preloadedSchedule = Array.isArray(navState?.preloadedSchedule)
+    ? navState.preloadedSchedule
+    : cachedAudit.schedule;
+  const autoAuditStarted = useRef(false);
 
   // ── All state + API calls come from the hook ─────────────────────────────
   const {
@@ -48,11 +100,49 @@ export default function PedagogicalAuditPage() {
     highViolations,
     runAudit,
     fetchReport,
+    hydrateReport,
     reset,
   } = usePedagogicalAudit();
 
   // ── Local UI state — selected criterion for detail card ───────────────────
   const [selected, setSelected] = useState<CriterionResult | null>(null);
+
+  useEffect(() => {
+    if (cachedAudit.report && !hasReport) {
+      hydrateReport(cachedAudit.report as never);
+    }
+  }, [cachedAudit.report, hasReport, hydrateReport]);
+
+  useEffect(() => {
+    if (hasReport || status !== "idle" || preloadedSchedule.length === 0 || autoAuditStarted.current) {
+      return;
+    }
+
+    autoAuditStarted.current = true;
+    void runAudit({
+      schedule: preloadedSchedule,
+    });
+  }, [hasReport, preloadedSchedule, runAudit, status]);
+
+  useEffect(() => {
+    if (!report) {
+      return;
+    }
+
+    try {
+      window.sessionStorage.setItem(
+        PEDAGOGICAL_CACHE_KEY,
+        JSON.stringify({
+          schedule: preloadedSchedule,
+          report,
+        }),
+      );
+    } catch {
+      // Ignore storage failures and keep the page functional.
+    }
+  }, [preloadedSchedule, report]);
+
+  const planningTimeline = preloadedSchedule.map(toAuditPlanningItem);
 
   // ── Handler: audit cached report or run from preloaded schedule ───────────
   const handleAudit = () => {
@@ -174,8 +264,7 @@ export default function PedagogicalAuditPage() {
 
             {/* ── 4. PLANNING VIEW ─── timeline colored by audit */}
             <AuditPlanningView
-              sessions = {report.criteria}   // criteria carry session context in details
-              criteria = {report.criteria}
+              sessions = {planningTimeline}
             />
 
             {/* ── 5+6. SIDE-BY-SIDE: Criteria table + Criterion detail ── */}
