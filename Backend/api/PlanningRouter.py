@@ -1,54 +1,31 @@
 """
 api/PlanningRouter.py
 ======================
-FastAPI router for the Planning Agent.
-
-Updated to support the 3 run modes of PlanningAgent:
-
-  Mode 1 — /planning/run/with-constraints
-    Body includes pre-validated constraints_dict from ConstraintAgent.
-    → PlanningAgent skips all extraction, uses the dict directly.
-
-  Mode 2 — /planning/run  (existing, updated)
-    Body includes optional user_constraints text.
-    → LLM extracts from text, merges with DB.
-
-  Mode 3 — /planning/run/full-pipeline  (NEW)
-    Runs ConstraintAgent first, then PlanningAgent.
-    Single endpoint that does everything end-to-end.
-
-Endpoints:
-  POST /planning/run                    -> Mode 2: text constraints
-  POST /planning/run/with-constraints   -> Mode 1: pre-validated dict
-  POST /planning/run/full-pipeline      -> Mode 3: ConstraintAgent + PlanningAgent
-  GET  /planning/constraints            -> All DB constraints
-  GET  /planning/schedule               -> Last generated schedule
-  POST /planning/validate               -> HITL validation
-  GET  /planning/export/csv             -> CSV download
+Fixed imports — all schemas inline, no external module dependencies.
+Everything needed is defined directly in this file.
 """
 
 import io
+import uuid
+import traceback
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from db.DB import SessionLocal
-from agents.planning_agent import PlanningAgent, schedule_to_csv_bytes
+from agents.planning_agent  import PlanningAgent, schedule_to_csv_bytes
 from agents.ConstraintAgent import ConstraintAgent
 
 
 router = APIRouter(prefix="/planning", tags=["Planning Agent"])
 
-_last_schedule:  list[dict] = []
-_last_validated: bool       = False
+_last_schedule: list[dict] = []
+_last_group_id: str        = ""
 
-
-# =============================================================================
-#  DB Dependency
-# =============================================================================
 
 def get_db():
     db = SessionLocal()
@@ -59,58 +36,31 @@ def get_db():
 
 
 # =============================================================================
-#  Schemas
+#  ALL SCHEMAS INLINE — no external imports needed
 # =============================================================================
 
 class PlanningRunRequest(BaseModel):
-    """Mode 2 — text constraints only."""
-    user_constraints: Optional[str] = Field(
-        default=None,
-        description="Optional scheduling constraints in free text (English or French).",
-        examples=["No sessions on Friday. Ahmed available Monday morning only."]
-    )
-
+    user_constraints: Optional[str] = None
 
 class PlanningRunWithConstraintsRequest(BaseModel):
-    """Mode 1 — pre-validated constraints_dict from ConstraintAgent."""
-    constraints_dict: dict = Field(
-        ...,
-        description=(
-            "Pre-validated constraint dict from ConstraintAgent. "
-            "Pass result.planning_dict from POST /constraints/analyze."
-        )
-    )
-
+    constraints_dict: dict
 
 class FullPipelineRequest(BaseModel):
-    """Mode 3 — runs ConstraintAgent then PlanningAgent end-to-end."""
-    pedagogical_text: Optional[str] = Field(
-        default="",
-        description="Pedagogical preferences in free text.",
-        examples=["Start with fundamentals. Avoid cognitive overload."]
-    )
-    user_text: Optional[str] = Field(
-        default="",
-        description="Scheduling constraints in free text (English or French).",
-        examples=["No sessions on Friday. Ahmed available Monday morning only."]
-    )
+    pedagogical_text: Optional[str] = ""
+    user_text:        Optional[str] = ""
 
-
-class SessionSlot(BaseModel):
-    # Display fields
-    session_number:  int
-    course_id:       int
-    course_title:    str
-    trainer_id:      int
-    trainer_name:    str
-    room_id:         int
-    room_name:       str
-    group_name:      str
-    suggested_day:   str
-    suggested_time:  str
-    reasoning:       str
-
-    # DB fields (match ScheduleSlot model)
+class SessionSlotOut(BaseModel):
+    session_number:          int
+    course_id:               int
+    course_title:            str
+    trainer_id:              int
+    trainer_name:            str
+    room_id:                 int
+    room_name:               str
+    group_name:              str
+    suggested_day:           str
+    suggested_time:          str
+    reasoning:               str
     learner_group_id:        int
     start_time:              str
     end_time:                str
@@ -118,287 +68,420 @@ class SessionSlot(BaseModel):
     is_validated:            bool
     quality_score:           float
     pedagogical_audit_score: float
-
     class Config:
         extra = "ignore"
 
-
 class PlanningRunResponse(BaseModel):
     success:           bool
+    planning_group_id: str
     total_sessions:    int
     final_constraints: dict
-    schedule:          list[SessionSlot]
+    schedule:          list[SessionSlotOut]
+    engine:            str = "greedy"
 
+class ValidateBody(BaseModel):
+    validation_notes: Optional[str] = None
 
-class FullPipelineResponse(BaseModel):
-    success:              bool
-    total_sessions:       int
-    constraint_valid:     bool
-    constraint_issues:    list[dict]
-    constraint_warnings:  list[str]
-    final_constraints:    dict
-    schedule:             list[SessionSlot]
+class RejectBody(BaseModel):
+    reason: Optional[str] = None
 
+class RegenerateBody(BaseModel):
+    constraints_dict:  Optional[dict] = None
+    user_constraints:  Optional[str]  = None
+    rejected_group_id: Optional[str]  = None
+    attempt:           int = 2
 
-class ValidateResponse(BaseModel):
-    success:   bool
-    validated: bool
-    message:   str
+class MoveBody(BaseModel):
+    new_start_time: str
+    new_end_time:   str
+    admin_note:     Optional[str] = None
 
-
-class ConstraintsResponse(BaseModel):
-    total:       int
-    constraints: dict
+class ImpactBody(BaseModel):
+    new_start_time:     str
+    new_end_time:       str
+    planning_group_id:  Optional[str] = None
 
 
 # =============================================================================
-#  HELPER
+#  DB SAVE — inline, no external service import
 # =============================================================================
 
-def _store_and_respond(result, agent, db) -> PlanningRunResponse:
-    """Stores schedule in memory and builds the response."""
-    global _last_schedule, _last_validated
-    _last_schedule  = result.schedule
-    _last_validated = False
+def _save_to_db(schedule: list[dict], db: Session) -> str:
+    from models.schedule import ScheduleSlot
+    group_id = str(uuid.uuid4())
+    slots    = []
+    for s in schedule:
+        try:
+            start = datetime.fromisoformat(str(s["start_time"]))
+            end   = datetime.fromisoformat(str(s["end_time"]))
+        except Exception:
+            continue
+        slot = ScheduleSlot(
+            course_id               = s.get("course_id", 0),
+            trainer_id              = s.get("trainer_id", 0),
+            room_id                 = s.get("room_id", 0),
+            learner_group_id        = s.get("learner_group_id", 0),
+            start_time              = start,
+            end_time                = end,
+            planning_group_id       = group_id,
+            session_number          = s.get("session_number"),
+            quality_score           = float(s.get("quality_score", 0.0)),
+            pedagogical_audit_score = float(s.get("pedagogical_audit_score", 0.0)),
+            status                  = "draft",
+            is_validated            = False,
+            move_history            = [],
+        )
+        slots.append(slot)
+    try:
+        db.add_all(slots)
+        db.commit()
+        print(f"  [Router] ✅ {len(slots)} slots saved → group={group_id[:8]}...")
+    except Exception as e:
+        db.rollback()
+        print(f"  [Router] ⚠️  DB save failed: {e}")
+    return group_id
+
+
+def _build_response(result, db: Session) -> PlanningRunResponse:
+    global _last_schedule, _last_group_id
+    _last_schedule = result.schedule
+    try:
+        group_id = _save_to_db(result.schedule, db)
+    except Exception:
+        group_id = str(uuid.uuid4())
+    _last_group_id = group_id
+
+    slots_out = []
+    for s in result.schedule:
+        try:
+            slots_out.append(SessionSlotOut(**s))
+        except Exception as e:
+            print(f"  [Router] Slot skip: {e}")
+
     return PlanningRunResponse(
         success           = result.success,
+        planning_group_id = group_id,
         total_sessions    = result.total_sessions,
         final_constraints = result.constraints_used,
-        schedule          = [SessionSlot(**s) for s in result.schedule],
+        schedule          = slots_out,
+        engine            = getattr(result, "engine", "greedy"),
     )
 
 
 # =============================================================================
-#  ENDPOINT 1 — POST /planning/run  (Mode 2: text constraints)
+#  EXISTING ENDPOINTS
 # =============================================================================
 
-@router.post(
-    "/run",
-    response_model=PlanningRunResponse,
-    summary="[Mode 2] Generate schedule with optional text constraints",
-)
-def run_planning(
-    body: PlanningRunRequest,
+@router.post("/run", response_model=PlanningRunResponse)
+def run_planning(body: PlanningRunRequest, db: Session = Depends(get_db)):
+    try:
+        result = PlanningAgent(db=db).run(extra_constraints=body.user_constraints or "")
+        if not result.success:
+            raise HTTPException(422, detail=result.error)
+        return _build_response(result, db)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(500, detail=str(e))
+
+
+@router.post("/run/with-constraints", response_model=PlanningRunResponse)
+def run_with_constraints(body: PlanningRunWithConstraintsRequest, db: Session = Depends(get_db)):
+    try:
+        result = PlanningAgent(db=db).run(constraints_dict=body.constraints_dict)
+        if not result.success:
+            raise HTTPException(422, detail=result.error)
+        return _build_response(result, db)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(500, detail=str(e))
+
+
+@router.post("/run/full-pipeline")
+def run_full_pipeline(body: FullPipelineRequest, db: Session = Depends(get_db)):
+    try:
+        cr     = ConstraintAgent(db=db).run(
+            pedagogical_text=body.pedagogical_text or "",
+            user_text=body.user_text or "",
+        )
+        result = PlanningAgent(db=db).run(constraints_dict=cr.planning_dict)
+        if not result.success:
+            raise HTTPException(422, detail=result.error)
+        return _build_response(result, db)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(500, detail=str(e))
+
+
+# =============================================================================
+#  NEW: HITL — Validate
+# =============================================================================
+
+@router.post("/{planning_group_id}/validate")
+def validate_schedule(
+    planning_group_id: str,
+    body: ValidateBody,
     db:   Session = Depends(get_db),
 ):
-    """
-    Generates the optimal schedule.
-    DB constraints are always loaded automatically.
-    `user_constraints` is optional free text (English or French) — the LLM extracts it.
-
-    For best results with validated constraints, use **POST /planning/run/full-pipeline**.
-
-    Minimal call (DB constraints only):
-    ```json
-    {}
-    ```
-    With text constraints:
-    ```json
-    { "user_constraints": "No sessions on Friday." }
-    ```
-    """
-    global _last_schedule, _last_validated
-
-    agent  = PlanningAgent(db=db)
-    # Pass "" for API mode (no input() called), None would trigger terminal mode
-    result = agent.run(extra_constraints=body.user_constraints or "")
-
-    if not result.success:
-        raise HTTPException(status_code=422, detail=result.error)
-
-    return _store_and_respond(result, agent, db)
+    try:
+        from models.schedule import ScheduleSlot
+        slots = db.query(ScheduleSlot).filter(
+            ScheduleSlot.planning_group_id == planning_group_id
+        ).all()
+        if not slots:
+            raise HTTPException(404, detail=f"No slots found for group {planning_group_id}")
+        now = datetime.now(timezone.utc)
+        for slot in slots:
+            slot.status           = "validated"
+            slot.is_validated     = True
+            slot.validated_at     = now
+            slot.validation_notes = body.validation_notes
+        db.commit()
+        return {"success": True, "hitl_status": "validated",
+                "message": f"✅ {len(slots)} session(s) validated.",
+                "planning_group_id": planning_group_id,
+                "total_slots": len(slots),
+                "timestamp": now.isoformat()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(500, detail=str(e))
 
 
 # =============================================================================
-#  ENDPOINT 2 — POST /planning/run/with-constraints  (Mode 1: pre-validated dict)
+#  NEW: HITL — Reject
 # =============================================================================
 
-@router.post(
-    "/run/with-constraints",
-    response_model=PlanningRunResponse,
-    summary="[Mode 1] Generate schedule from pre-validated ConstraintAgent output",
-)
-def run_with_constraints(
-    body: PlanningRunWithConstraintsRequest,
+@router.post("/{planning_group_id}/reject")
+def reject_schedule(
+    planning_group_id: str,
+    body: RejectBody,
     db:   Session = Depends(get_db),
 ):
-    """
-    Generates schedule using a pre-validated constraint dict from the ConstraintAgent.
-
-    **Recommended workflow:**
-    1. Call `POST /constraints/analyze` → get `planning_dict`
-    2. Pass `planning_dict` here as `constraints_dict`
-
-    This mode skips LLM extraction entirely — constraints are already validated
-    against ISO rules and business rules.
-
-    ```json
-    {
-      "constraints_dict": { ...planning_dict from /constraints/analyze... }
-    }
-    ```
-    """
-    global _last_schedule, _last_validated
-
-    agent  = PlanningAgent(db=db)
-    result = agent.run(constraints_dict=body.constraints_dict)
-
-    if not result.success:
-        raise HTTPException(status_code=422, detail=result.error)
-
-    return _store_and_respond(result, agent, db)
+    try:
+        from models.schedule import ScheduleSlot
+        slots = db.query(ScheduleSlot).filter(
+            ScheduleSlot.planning_group_id == planning_group_id
+        ).all()
+        now = datetime.now(timezone.utc)
+        for slot in slots:
+            slot.status           = "rejected"
+            slot.rejected_at      = now
+            slot.validation_notes = body.reason
+        db.commit()
+        return {"success": True, "hitl_status": "rejected",
+                "message": f"❌ {len(slots)} session(s) rejected.",
+                "planning_group_id": planning_group_id,
+                "total_slots": len(slots),
+                "timestamp": now.isoformat()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(500, detail=str(e))
 
 
 # =============================================================================
-#  ENDPOINT 3 — POST /planning/run/full-pipeline  (Mode 3: end-to-end)
+#  NEW: HITL — Status
 # =============================================================================
 
-@router.post(
-    "/run/full-pipeline",
-    response_model=FullPipelineResponse,
-    summary="[Mode 3] Run ConstraintAgent + PlanningAgent in one call",
-)
-def run_full_pipeline(
-    body: FullPipelineRequest,
-    db:   Session = Depends(get_db),
-):
-    """
-    Full end-to-end pipeline in a single call:
-
-    1. **ConstraintAgent** — loads ISO constraints from DB,
-       extracts pedagogical + scheduling constraints via LLM,
-       merges and validates everything (ISO rules + business rules).
-
-    2. **PlanningAgent** — receives the validated constraint dict,
-       generates the optimal schedule.
-
-    The response includes constraint validation details so you can
-    see what was applied and any warnings raised.
-
-    ```json
-    {
-      "pedagogical_text": "Start with fundamentals. Avoid cognitive overload.",
-      "user_text": "No sessions on Friday. Ahmed available Monday morning only."
-    }
-    ```
-    """
-    global _last_schedule, _last_validated
-
-    # Step 1: ConstraintAgent
-    constraint_agent  = ConstraintAgent(db=db)
-    constraint_result = constraint_agent.run(
-        pedagogical_text = body.pedagogical_text or "",
-        user_text        = body.user_text        or "",
-    )
-
-    # Step 2: PlanningAgent — uses pre-validated dict
-    planning_agent  = PlanningAgent(db=db)
-    planning_result = planning_agent.run(
-        constraints_dict=constraint_result.planning_dict
-    )
-
-    if not planning_result.success:
-        raise HTTPException(status_code=422, detail=planning_result.error)
-
-    _last_schedule  = planning_result.schedule
-    _last_validated = False
-
-    # Serialize constraint issues for response
-    issues_out = [
-        {
-            "field":      i.field,
-            "message":    i.message,
-            "severity":   i.severity.value,
-            "suggestion": i.suggestion,
+@router.get("/{planning_group_id}/status")
+def get_status(planning_group_id: str, db: Session = Depends(get_db)):
+    try:
+        from models.schedule import ScheduleSlot
+        slots = db.query(ScheduleSlot).filter(
+            ScheduleSlot.planning_group_id == planning_group_id
+        ).all()
+        return {
+            "planning_group_id": planning_group_id,
+            "total_slots":       len(slots),
+            "validated_slots":   sum(1 for s in slots if s.status == "validated"),
+            "rejected_slots":    sum(1 for s in slots if s.status == "rejected"),
+            "draft_slots":       sum(1 for s in slots if s.status == "draft"),
+            "status":            slots[0].status if slots else "not_found",
         }
-        for i in constraint_result.validation.issues
-    ]
-
-    return FullPipelineResponse(
-        success             = planning_result.success,
-        total_sessions      = planning_result.total_sessions,
-        constraint_valid    = constraint_result.validation.is_valid,
-        constraint_issues   = issues_out,
-        constraint_warnings = constraint_result.validation.warnings,
-        final_constraints   = planning_result.constraints_used,
-        schedule            = [SessionSlot(**s) for s in planning_result.schedule],
-    )
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(500, detail=str(e))
 
 
 # =============================================================================
-#  ENDPOINT 4 — GET /planning/constraints
+#  NEW: Regenerate
 # =============================================================================
 
-@router.get(
-    "/constraints",
-    response_model=ConstraintsResponse,
-    summary="View all constraints currently stored in DB",
-)
-def get_constraints(db: Session = Depends(get_db)):
-    """Returns all constraints from the Constraints table."""
-    constraints, nb = PlanningAgent(db=db).get_constraints()
-    return ConstraintsResponse(total=nb, constraints=constraints)
+@router.post("/regenerate")
+def regenerate_schedule(body: RegenerateBody, db: Session = Depends(get_db)):
+    try:
+        result = PlanningAgent(db=db).regenerate(
+            constraints_dict  = body.constraints_dict,
+            extra_constraints = body.user_constraints or "",
+            attempt           = body.attempt,
+        )
+        if not result.success:
+            raise HTTPException(422, detail=result.error)
+        return _build_response(result, db)
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(500, detail=str(e))
 
 
 # =============================================================================
-#  ENDPOINT 5 — GET /planning/schedule
+#  NEW: Impact Analysis
 # =============================================================================
 
-@router.get(
-    "/schedule",
-    response_model=list[SessionSlot],
-    summary="Get the last generated schedule (in memory)",
-)
+@router.post("/session/{slot_id}/impact")
+def impact_analysis(slot_id: int, body: ImpactBody, db: Session = Depends(get_db)):
+    try:
+        from models.schedule import ScheduleSlot
+        slot = db.query(ScheduleSlot).filter(ScheduleSlot.id == slot_id).first()
+        if not slot:
+            raise HTTPException(404, detail=f"Slot {slot_id} not found")
+
+        new_start = datetime.fromisoformat(body.new_start_time)
+        new_end   = datetime.fromisoformat(body.new_end_time)
+
+        query = db.query(ScheduleSlot).filter(
+            ScheduleSlot.id != slot_id,
+            ScheduleSlot.status != "rejected"
+        )
+        if body.planning_group_id:
+            query = query.filter(ScheduleSlot.planning_group_id == body.planning_group_id)
+        others = query.all()
+
+        def overlaps(s, start, end):
+            return s.start_time < end and start < s.end_time
+
+        new_conflicts = []
+        for o in others:
+            if not overlaps(o, new_start, new_end):
+                continue
+            if o.trainer_id == slot.trainer_id:
+                new_conflicts.append({"type": "trainer", "slot_id": o.id,
+                    "description": f"Trainer conflict with session #{o.session_number}"})
+            if o.room_id == slot.room_id:
+                new_conflicts.append({"type": "room", "slot_id": o.id,
+                    "description": f"Room conflict with session #{o.session_number}"})
+            if o.learner_group_id == slot.learner_group_id:
+                new_conflicts.append({"type": "group", "slot_id": o.id,
+                    "description": f"Group conflict with session #{o.session_number}"})
+
+        is_safe = len(new_conflicts) == 0
+        return {
+            "slot_id":            slot_id,
+            "proposed_start":     new_start.isoformat(),
+            "proposed_end":       new_end.isoformat(),
+            "is_safe":            is_safe,
+            "new_conflicts":      new_conflicts,
+            "resolved_conflicts": [],
+            "affected_sessions":  [],
+            "summary":            "No conflicts." if is_safe else f"{len(new_conflicts)} conflict(s) detected.",
+            "recommendation":     "✅ Safe to move." if is_safe else "⚠️ Conflicts detected.",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(500, detail=str(e))
+
+
+# =============================================================================
+#  NEW: Apply Move
+# =============================================================================
+
+@router.patch("/session/{slot_id}/move")
+def apply_move(slot_id: int, body: MoveBody, db: Session = Depends(get_db)):
+    try:
+        from models.schedule import ScheduleSlot
+        slot = db.query(ScheduleSlot).filter(ScheduleSlot.id == slot_id).first()
+        if not slot:
+            raise HTTPException(404, detail=f"Slot {slot_id} not found")
+
+        new_start = datetime.fromisoformat(body.new_start_time)
+        new_end   = datetime.fromisoformat(body.new_end_time)
+        old_start = slot.start_time.isoformat() if slot.start_time else ""
+        old_end   = slot.end_time.isoformat()   if slot.end_time   else ""
+
+        history_entry = {
+            "from_start": old_start, "from_end": old_end,
+            "to_start": new_start.isoformat(), "to_end": new_end.isoformat(),
+            "admin_note": body.admin_note,
+            "moved_at": datetime.now(timezone.utc).isoformat(),
+        }
+        slot.start_time   = new_start
+        slot.end_time     = new_end
+        slot.move_history = list(slot.move_history or []) + [history_entry]
+        slot.status       = "draft"
+        db.commit()
+
+        return {"success": True, "slot_id": slot_id,
+                "from_start": old_start, "from_end": old_end,
+                "to_start": new_start.isoformat(), "to_end": new_end.isoformat(),
+                "move_count": len(slot.move_history),
+                "message": f"Session moved to {new_start.strftime('%A %H:%M')}"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(500, detail=str(e))
+
+
+# =============================================================================
+#  NEW: Move History
+# =============================================================================
+
+@router.get("/session/{slot_id}/history")
+def session_move_history(slot_id: int, db: Session = Depends(get_db)):
+    try:
+        from models.schedule import ScheduleSlot
+        slot = db.query(ScheduleSlot).filter(ScheduleSlot.id == slot_id).first()
+        if not slot:
+            raise HTTPException(404, detail=f"Slot {slot_id} not found")
+        return {"slot_id": slot_id, "history": slot.move_history or []}
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(500, detail=str(e))
+
+
+# =============================================================================
+#  EXISTING: read endpoints
+# =============================================================================
+
+@router.get("/schedule", response_model=list[SessionSlotOut])
 def get_last_schedule():
-    """Returns the last schedule generated by any /run endpoint."""
     if not _last_schedule:
-        raise HTTPException(
-            status_code=404,
-            detail="No schedule generated yet. Call POST /planning/run first."
-        )
-    return [SessionSlot(**s) for s in _last_schedule]
+        raise HTTPException(404, detail="No schedule yet.")
+    return [SessionSlotOut(**s) for s in _last_schedule if _slot_valid(s)]
 
+def _slot_valid(s):
+    try:
+        SessionSlotOut(**s)
+        return True
+    except Exception:
+        return False
 
-# =============================================================================
-#  ENDPOINT 6 — POST /planning/validate
-# =============================================================================
+@router.get("/constraints")
+def get_constraints(db: Session = Depends(get_db)):
+    try:
+        constraints, nb = PlanningAgent(db=db).get_constraints()
+        return {"total": nb, "constraints": constraints}
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(500, detail=str(e))
 
-@router.post(
-    "/validate",
-    response_model=ValidateResponse,
-    summary="HITL — validate the current schedule",
-)
-def validate_schedule():
-    """Marks the last generated schedule as validated."""
-    global _last_validated
-    if not _last_schedule:
-        raise HTTPException(
-            status_code=404,
-            detail="No schedule to validate. Call POST /planning/run first."
-        )
-    _last_validated = True
-    return ValidateResponse(
-        success   = True,
-        validated = True,
-        message   = f"Schedule validated. {len(_last_schedule)} session(s) confirmed.",
-    )
-
-
-# =============================================================================
-#  ENDPOINT 7 — GET /planning/export/csv
-# =============================================================================
-
-@router.get(
-    "/export/csv",
-    summary="Download the last generated schedule as CSV",
-)
+@router.get("/export/csv")
 def export_csv():
-    """Downloads the last generated schedule as a CSV file."""
     if not _last_schedule:
-        raise HTTPException(
-            status_code=404,
-            detail="No schedule to export. Call POST /planning/run first."
-        )
+        raise HTTPException(404, detail="No schedule to export.")
     return StreamingResponse(
         io.BytesIO(schedule_to_csv_bytes(_last_schedule)),
         media_type="text/csv",

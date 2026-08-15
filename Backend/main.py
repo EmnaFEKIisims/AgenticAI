@@ -126,8 +126,8 @@ async def lifespan(app: FastAPI):
     print("🚀 Starting Agentic AI Planning System...")
 
     Base.metadata.create_all(bind=engine)
-    alembic_cfg = Config("alembic.ini")
-    command.upgrade(alembic_cfg, "head")
+    #alembic_cfg = Config("alembic.ini")
+    #command.upgrade(alembic_cfg, "head")
     print("✅ Database initialized.")
 
     test_llm_connection()

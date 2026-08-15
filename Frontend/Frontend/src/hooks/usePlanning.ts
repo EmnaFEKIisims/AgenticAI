@@ -18,10 +18,10 @@ import { normalizeDayLabel } from "../utils/planningHelpers";
 import {
   runPlanning,
   getSchedule,
-  validatePlanning,
   exportCSV,
   getConstraints,
 } from "../services/planningService";
+import { validatePlanning } from "../services/planningManagementService";
 
 
 // =============================================================================

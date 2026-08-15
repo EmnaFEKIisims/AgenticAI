@@ -570,6 +570,68 @@ class PlanningAgent:
     def get_constraints(self) -> tuple[dict, int]:
         return _load_constraints_from_db(self.db)
 
+    def regenerate(
+            self,
+            extra_constraints: str | None = None,
+            constraints_dict: dict | None = None,
+            attempt: int = 2,
+    ) -> PlanningResult:
+        """
+        Génère un planning différent du précédent.
+        Mélange l'ordre des cours selon l'attempt.
+        """
+        import random
+
+        print(f"\n  [PlanningAgent] Regenerating (attempt #{attempt})...")
+
+        # Résoudre les contraintes
+        if constraints_dict is not None:
+            final = constraints_dict
+        else:
+            db_constraints, _ = _load_constraints_from_db(self.db)
+            user_c = _extract_constraints_from_text(extra_constraints) if extra_constraints else {}
+            final = _merge_constraints(db_constraints, user_c)
+
+        data = _load_data_from_db(self.db)
+        if not data:
+            return PlanningResult(
+                success=False, total_sessions=0,
+                constraints_used=final, schedule=[],
+                error="No data in DB."
+            )
+
+        # Mélanger les cours pour obtenir un résultat différent
+        data_shuffled = {
+            **data,
+            "courses": list(data["courses"]),
+            "trainers": list(data["trainers"]),
+        }
+
+        rng = random.Random(attempt * 42)
+        rng.shuffle(data_shuffled["courses"])
+
+        if attempt % 2 == 0:
+            data_shuffled["trainers"] = list(reversed(data_shuffled["trainers"]))
+
+        schedule = _generate_schedule_recurring(data_shuffled, final)
+
+        if not schedule:
+            return PlanningResult(
+                success=False, total_sessions=0,
+                constraints_used=final, schedule=[],
+                error="No sessions could be scheduled."
+            )
+
+        print(f"  [PlanningAgent] ✅ Regenerated: {len(schedule)} sessions (attempt #{attempt}).")
+
+        return PlanningResult(
+            success=True,
+            total_sessions=len(schedule),
+            constraints_used=final,
+            schedule=schedule,
+            engine="greedy",
+        )
+
 
 # =============================================================================
 #  TERMINAL
