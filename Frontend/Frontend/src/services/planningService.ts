@@ -1,10 +1,8 @@
 // services/planningService.ts
-// ============================
-// Fix: removed fallback to relative URLs ("" / "/api").
-// Always uses absolute URL pointing to http://localhost:8000.
+// Fixed: removed old validatePlanning() that called /planning/validate (404)
+// Validation is now handled by planningManagementService.ts → /planning/{group_id}/validate
 
 import type {
-  PlanningRunRequest,
   PlanningResponse,
   ValidateResponse,
   ConstraintsResponse,
@@ -13,35 +11,29 @@ import type {
 
 import type { PlanningDict } from "../types/constraintTypes";
 
-// Always use an absolute URL — never relative (relative hits port 5173, not 8000)
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "")
               ?? "http://localhost:8000";
 
-// =============================================================================
-//  Base fetch helper
-// =============================================================================
-
 async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json", ...options.headers },
-    ...options,
-  });
-
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      headers: { "Content-Type": "application/json", ...options.headers },
+      ...options,
+    });
+  } catch {
+    throw new Error(
+      `Cannot reach backend at ${BASE_URL}. ` +
+      `Make sure uvicorn is running: uvicorn main:app --reload`
+    );
+  }
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
-    try {
-      const body = await res.json();
-      detail = body?.detail ?? detail;
-    } catch {}
+    try { const body = await res.json(); detail = body?.detail ?? detail; } catch {}
     throw new Error(detail);
   }
-
   return res.json() as Promise<T>;
 }
-
-// =============================================================================
-//  Response types
-// =============================================================================
 
 export interface FullPipelineResponse {
   success:             boolean;
@@ -51,29 +43,18 @@ export interface FullPipelineResponse {
   constraint_warnings: string[];
   final_constraints:   Record<string, unknown>;
   schedule:            SessionSlot[];
+  planning_group_id:   string;
 }
 
-// =============================================================================
-//  MODE 1 — POST /planning/run
-//  Text constraints → LLM extracts → schedule
-// =============================================================================
-
+// POST /planning/run
 export async function runPlanning(userConstraints?: string): Promise<PlanningResponse> {
-  const body: PlanningRunRequest = {
-    user_constraints: userConstraints?.trim() || undefined,
-  };
   return apiFetch<PlanningResponse>("/planning/run", {
     method: "POST",
-    body:   JSON.stringify(body),
+    body:   JSON.stringify({ user_constraints: userConstraints?.trim() || undefined }),
   });
 }
 
-// =============================================================================
-//  MODE 2 — POST /planning/run/with-constraints
-//  Pre-validated planning_dict from ConstraintAgent → schedule
-//  Skips ALL LLM extraction in the backend.
-// =============================================================================
-
+// POST /planning/run/with-constraints
 export async function runPlanningWithConstraints(
   constraintsDict: PlanningDict | Record<string, unknown>
 ): Promise<PlanningResponse> {
@@ -83,11 +64,7 @@ export async function runPlanningWithConstraints(
   });
 }
 
-// =============================================================================
-//  MODE 3 — POST /planning/run/full-pipeline
-//  ConstraintAgent + PlanningAgent in one single call.
-// =============================================================================
-
+// POST /planning/run/full-pipeline
 export async function runFullPipeline(
   pedagogicalText: string,
   userText: string,
@@ -101,38 +78,25 @@ export async function runFullPipeline(
   });
 }
 
-// =============================================================================
-//  GET /planning/schedule
-// =============================================================================
-
+// GET /planning/schedule
 export async function getSchedule(): Promise<SessionSlot[]> {
   return apiFetch<SessionSlot[]>("/planning/schedule");
 }
 
-// =============================================================================
-//  POST /planning/validate
-// =============================================================================
-
-export async function validatePlanning(): Promise<ValidateResponse> {
-  return apiFetch<ValidateResponse>("/planning/validate", { method: "POST" });
-}
-
-// =============================================================================
-//  GET /planning/constraints
-// =============================================================================
-
+// GET /planning/constraints
 export async function getConstraints(): Promise<ConstraintsResponse> {
   return apiFetch<ConstraintsResponse>("/planning/constraints");
 }
 
-// =============================================================================
-//  GET /planning/export/csv
-// =============================================================================
-
+// GET /planning/export/csv
 export async function exportCSV(): Promise<void> {
-  const res = await fetch(`${BASE_URL}/planning/export/csv`);
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}/planning/export/csv`);
+  } catch {
+    throw new Error("Cannot reach backend for CSV export.");
+  }
   if (!res.ok) throw new Error(`Export failed: HTTP ${res.status}`);
-
   const blob   = await res.blob();
   const url    = URL.createObjectURL(blob);
   const anchor = document.createElement("a");

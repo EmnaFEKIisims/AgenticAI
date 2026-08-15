@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 
 import ConstraintForm       from "../components/constraint/ConstraintForm";
@@ -48,6 +48,7 @@ export default function ConstraintPage() {
   const [form,  setForm]  = useState<ConstraintFormValue>(INITIAL_FORM);
   const [state, setState] = useState<ConstraintAgentState>(INITIAL_STATE);
   const [isCreatingPlan, setIsCreatingPlan] = useState(false);
+  const requestInFlight = useRef(false);
 
   const isLoading = state.status === "loading";
   const isBusy = isLoading || isCreatingPlan;
@@ -60,6 +61,8 @@ export default function ConstraintPage() {
 
   // ── Generate — calls ConstraintAgent backend ────────────────────────────────
   const handleGenerate = useCallback(async () => {
+    if (requestInFlight.current) return;
+    requestInFlight.current = true;
     setState({ ...INITIAL_STATE, status: "loading" });
 
     try {
@@ -105,6 +108,8 @@ export default function ConstraintPage() {
         error:  err instanceof Error ? err.message : "Unexpected error",
       });
       setIsCreatingPlan(false);
+    } finally {
+      requestInFlight.current = false;
     }
   }, [form, navigate]);
 
