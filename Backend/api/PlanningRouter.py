@@ -1,8 +1,9 @@
 """
 api/PlanningRouter.py
 ======================
-Fixed imports — all schemas inline, no external module dependencies.
-Everything needed is defined directly in this file.
+Fixed: _save_to_db now returns the mapping session_number → DB slot id
+       SessionSlotOut now includes 'id' (the real DB primary key)
+       → Drag & Drop sends the correct DB id to PATCH /session/{id}/move
 """
 
 import io
@@ -20,7 +21,6 @@ from db.DB import SessionLocal
 from agents.planning_agent  import PlanningAgent, schedule_to_csv_bytes
 from agents.ConstraintAgent import ConstraintAgent
 
-
 router = APIRouter(prefix="/planning", tags=["Planning Agent"])
 
 _last_schedule: list[dict] = []
@@ -36,7 +36,7 @@ def get_db():
 
 
 # =============================================================================
-#  ALL SCHEMAS INLINE — no external imports needed
+#  Schemas
 # =============================================================================
 
 class PlanningRunRequest(BaseModel):
@@ -50,6 +50,7 @@ class FullPipelineRequest(BaseModel):
     user_text:        Optional[str] = ""
 
 class SessionSlotOut(BaseModel):
+    id:                      Optional[int] = None   # ← DB primary key (for DnD)
     session_number:          int
     course_id:               int
     course_title:            str
@@ -97,25 +98,35 @@ class MoveBody(BaseModel):
     admin_note:     Optional[str] = None
 
 class ImpactBody(BaseModel):
-    new_start_time:     str
-    new_end_time:       str
-    planning_group_id:  Optional[str] = None
+    new_start_time:    str
+    new_end_time:      str
+    planning_group_id: Optional[str] = None
 
 
 # =============================================================================
-#  DB SAVE — inline, no external service import
+#  DB SAVE — returns {session_number: db_slot_id} mapping
 # =============================================================================
 
-def _save_to_db(schedule: list[dict], db: Session) -> str:
+def _save_to_db(schedule: list[dict], db: Session) -> tuple[str, dict[int, int]]:
+    """
+    Saves all sessions to DB as ScheduleSlot rows.
+
+    Returns:
+        (group_id, {session_number: db_slot_id})
+        The mapping lets us add the real DB id back into the response.
+    """
     from models.schedule import ScheduleSlot
+
     group_id = str(uuid.uuid4())
     slots    = []
+
     for s in schedule:
         try:
             start = datetime.fromisoformat(str(s["start_time"]))
             end   = datetime.fromisoformat(str(s["end_time"]))
         except Exception:
             continue
+
         slot = ScheduleSlot(
             course_id               = s.get("course_id", 0),
             trainer_id              = s.get("trainer_id", 0),
@@ -131,28 +142,54 @@ def _save_to_db(schedule: list[dict], db: Session) -> str:
             is_validated            = False,
             move_history            = [],
         )
-        slots.append(slot)
+        slots.append((s.get("session_number"), slot))
+
     try:
-        db.add_all(slots)
+        db.add_all([slot for _, slot in slots])
         db.commit()
+
+        # ← KEY FIX: after commit, each slot now has a real DB id
+        sn_to_db_id = {
+            sn: slot.id
+            for sn, slot in slots
+            if slot.id is not None
+        }
         print(f"  [Router] ✅ {len(slots)} slots saved → group={group_id[:8]}...")
+        return group_id, sn_to_db_id
+
     except Exception as e:
         db.rollback()
         print(f"  [Router] ⚠️  DB save failed: {e}")
-    return group_id
+        return group_id, {}
 
+
+# =============================================================================
+#  RESPONSE BUILDER — injects DB ids into schedule
+# =============================================================================
 
 def _build_response(result, db: Session) -> PlanningRunResponse:
     global _last_schedule, _last_group_id
-    _last_schedule = result.schedule
+
     try:
-        group_id = _save_to_db(result.schedule, db)
+        group_id, sn_to_db_id = _save_to_db(result.schedule, db)
     except Exception:
-        group_id = str(uuid.uuid4())
+        group_id    = str(uuid.uuid4())
+        sn_to_db_id = {}
+
     _last_group_id = group_id
 
-    slots_out = []
+    # Inject DB ids into schedule dicts
+    enriched = []
     for s in result.schedule:
+        s_copy = dict(s)
+        sn = s_copy.get("session_number")
+        s_copy["id"] = sn_to_db_id.get(sn)   # ← real DB id injected here
+        enriched.append(s_copy)
+
+    _last_schedule = enriched
+
+    slots_out = []
+    for s in enriched:
         try:
             slots_out.append(SessionSlotOut(**s))
         except Exception as e:
@@ -219,22 +256,18 @@ def run_full_pipeline(body: FullPipelineRequest, db: Session = Depends(get_db)):
 
 
 # =============================================================================
-#  NEW: HITL — Validate
+#  HITL — Validate
 # =============================================================================
 
 @router.post("/{planning_group_id}/validate")
-def validate_schedule(
-    planning_group_id: str,
-    body: ValidateBody,
-    db:   Session = Depends(get_db),
-):
+def validate_schedule(planning_group_id: str, body: ValidateBody, db: Session = Depends(get_db)):
     try:
         from models.schedule import ScheduleSlot
         slots = db.query(ScheduleSlot).filter(
             ScheduleSlot.planning_group_id == planning_group_id
         ).all()
         if not slots:
-            raise HTTPException(404, detail=f"No slots found for group {planning_group_id}")
+            raise HTTPException(404, detail=f"No slots for group {planning_group_id}")
         now = datetime.now(timezone.utc)
         for slot in slots:
             slot.status           = "validated"
@@ -255,15 +288,11 @@ def validate_schedule(
 
 
 # =============================================================================
-#  NEW: HITL — Reject
+#  HITL — Reject
 # =============================================================================
 
 @router.post("/{planning_group_id}/reject")
-def reject_schedule(
-    planning_group_id: str,
-    body: RejectBody,
-    db:   Session = Depends(get_db),
-):
+def reject_schedule(planning_group_id: str, body: RejectBody, db: Session = Depends(get_db)):
     try:
         from models.schedule import ScheduleSlot
         slots = db.query(ScheduleSlot).filter(
@@ -288,7 +317,7 @@ def reject_schedule(
 
 
 # =============================================================================
-#  NEW: HITL — Status
+#  HITL — Status
 # =============================================================================
 
 @router.get("/{planning_group_id}/status")
@@ -312,7 +341,7 @@ def get_status(planning_group_id: str, db: Session = Depends(get_db)):
 
 
 # =============================================================================
-#  NEW: Regenerate
+#  Regenerate
 # =============================================================================
 
 @router.post("/regenerate")
@@ -334,7 +363,7 @@ def regenerate_schedule(body: RegenerateBody, db: Session = Depends(get_db)):
 
 
 # =============================================================================
-#  NEW: Impact Analysis
+#  Impact Analysis
 # =============================================================================
 
 @router.post("/session/{slot_id}/impact")
@@ -375,15 +404,15 @@ def impact_analysis(slot_id: int, body: ImpactBody, db: Session = Depends(get_db
 
         is_safe = len(new_conflicts) == 0
         return {
-            "slot_id":            slot_id,
-            "proposed_start":     new_start.isoformat(),
-            "proposed_end":       new_end.isoformat(),
-            "is_safe":            is_safe,
-            "new_conflicts":      new_conflicts,
+            "slot_id":        slot_id,
+            "proposed_start": new_start.isoformat(),
+            "proposed_end":   new_end.isoformat(),
+            "is_safe":        is_safe,
+            "new_conflicts":  new_conflicts,
             "resolved_conflicts": [],
             "affected_sessions":  [],
-            "summary":            "No conflicts." if is_safe else f"{len(new_conflicts)} conflict(s) detected.",
-            "recommendation":     "✅ Safe to move." if is_safe else "⚠️ Conflicts detected.",
+            "summary":        "No conflicts." if is_safe else f"{len(new_conflicts)} conflict(s).",
+            "recommendation": "✅ Safe to move." if is_safe else "⚠️ Conflicts detected.",
         }
     except HTTPException:
         raise
@@ -393,27 +422,33 @@ def impact_analysis(slot_id: int, body: ImpactBody, db: Session = Depends(get_db
 
 
 # =============================================================================
-#  NEW: Apply Move
+#  Apply Move — uses REAL DB slot id
 # =============================================================================
 
 @router.patch("/session/{slot_id}/move")
 def apply_move(slot_id: int, body: MoveBody, db: Session = Depends(get_db)):
+    """
+    Moves a session to a new time slot.
+    slot_id = the DB primary key (returned in SessionSlotOut.id)
+    """
     try:
         from models.schedule import ScheduleSlot
         slot = db.query(ScheduleSlot).filter(ScheduleSlot.id == slot_id).first()
         if not slot:
-            raise HTTPException(404, detail=f"Slot {slot_id} not found")
+            raise HTTPException(404, detail=f"Slot with DB id={slot_id} not found. "
+                "Make sure you're using slot.id (DB primary key), not session_number.")
 
         new_start = datetime.fromisoformat(body.new_start_time)
         new_end   = datetime.fromisoformat(body.new_end_time)
+
         old_start = slot.start_time.isoformat() if slot.start_time else ""
         old_end   = slot.end_time.isoformat()   if slot.end_time   else ""
 
         history_entry = {
             "from_start": old_start, "from_end": old_end,
-            "to_start": new_start.isoformat(), "to_end": new_end.isoformat(),
+            "to_start":   new_start.isoformat(), "to_end": new_end.isoformat(),
             "admin_note": body.admin_note,
-            "moved_at": datetime.now(timezone.utc).isoformat(),
+            "moved_at":   datetime.now(timezone.utc).isoformat(),
         }
         slot.start_time   = new_start
         slot.end_time     = new_end
@@ -421,11 +456,17 @@ def apply_move(slot_id: int, body: MoveBody, db: Session = Depends(get_db)):
         slot.status       = "draft"
         db.commit()
 
-        return {"success": True, "slot_id": slot_id,
-                "from_start": old_start, "from_end": old_end,
-                "to_start": new_start.isoformat(), "to_end": new_end.isoformat(),
-                "move_count": len(slot.move_history),
-                "message": f"Session moved to {new_start.strftime('%A %H:%M')}"}
+        return {
+            "success":     True,
+            "slot_id":     slot_id,
+            "session_number": slot.session_number,
+            "from_start":  old_start,
+            "from_end":    old_end,
+            "to_start":    new_start.isoformat(),
+            "to_end":      new_end.isoformat(),
+            "move_count":  len(slot.move_history),
+            "message":     f"Session #{slot.session_number} moved to {new_start.strftime('%A %H:%M')}",
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -434,7 +475,7 @@ def apply_move(slot_id: int, body: MoveBody, db: Session = Depends(get_db)):
 
 
 # =============================================================================
-#  NEW: Move History
+#  Move History
 # =============================================================================
 
 @router.get("/session/{slot_id}/history")
@@ -453,21 +494,18 @@ def session_move_history(slot_id: int, db: Session = Depends(get_db)):
 
 
 # =============================================================================
-#  EXISTING: read endpoints
+#  Read endpoints
 # =============================================================================
 
 @router.get("/schedule", response_model=list[SessionSlotOut])
 def get_last_schedule():
     if not _last_schedule:
         raise HTTPException(404, detail="No schedule yet.")
-    return [SessionSlotOut(**s) for s in _last_schedule if _slot_valid(s)]
+    return [SessionSlotOut(**s) for s in _last_schedule if _valid(s)]
 
-def _slot_valid(s):
-    try:
-        SessionSlotOut(**s)
-        return True
-    except Exception:
-        return False
+def _valid(s):
+    try: SessionSlotOut(**s); return True
+    except: return False
 
 @router.get("/constraints")
 def get_constraints(db: Session = Depends(get_db)):
