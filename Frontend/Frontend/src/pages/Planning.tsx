@@ -212,20 +212,34 @@ export default function PlanningPage() {
     await move.dropOn(pendingMove, planningGroupId);
   }, [move, planningGroupId]);
 
-  const handleConfirmMove = useCallback(async (adminNote?: string) => {
-    const result = await move.confirmMove(adminNote);
-    if (result?.success && move.pendingMove) {
-      const target = move.pendingMove.target;
-      setLocalSchedule(prev => prev.map(s =>
-        (s.id ?? s.session_number) === move.pendingMove?.slot_id
-          ? { ...s, start_time: target.start_time, end_time: target.end_time,
-              suggested_day: `Week ${target.week} — ${target.day}`,
-              suggested_time: target.time_slot }
-          : s
-      ));
-      setHitlStatus("pending");
-    }
-  }, [move]);
+const handleConfirmMove = useCallback(async (adminNote?: string) => {
+  const result = await move.confirmMove(adminNote);
+  if (result?.success && move.pendingMove) {
+    const target = move.pendingMove.target;
+
+    // Build the updated schedule
+    const updatedSchedule = localSchedule.map(s =>
+      (s.id ?? s.session_number) === move.pendingMove?.slot_id
+        ? {
+            ...s,
+            start_time:    target.start_time,
+            end_time:      target.end_time,
+            suggested_day: `Week ${target.week} — ${target.day}`,
+            suggested_time: target.time_slot,
+          }
+        : s
+    );
+
+    // ← Fix: sync BOTH states
+    setLocalSchedule(updatedSchedule);
+    hydrateSchedule(
+      updatedSchedule as unknown as typeof state.schedule, 
+      state.constraints   // ← keep existing constraints
+    );
+
+    setHitlStatus("pending");   // move resets validation
+  }
+}, [move, localSchedule, hydrateSchedule, state.constraints]);
 
   // =============================================================================
   //  Render
