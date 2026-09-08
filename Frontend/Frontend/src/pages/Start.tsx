@@ -1,4 +1,4 @@
-import { Database, Upload } from 'lucide-react'
+import { Database, Settings2, Upload } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
 export default function StartPage() {
@@ -14,7 +14,7 @@ export default function StartPage() {
           </p>
         </header>
 
-        <div className="grid md:grid-cols-2 gap-5">
+        <div className="grid gap-5 md:grid-cols-3">
           <button
             type="button"
             onClick={() => navigate('/data')}
@@ -40,6 +40,20 @@ export default function StartPage() {
             <h2 className="text-2xl font-semibold text-base-content">Create Constraints</h2>
             <p className="mt-2 text-base-content/70">
               Open the constraint page first, then generate the planning schedule.
+            </p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => navigate('/crud')}
+            className="rounded-2xl border border-base-300 bg-base-100 p-7 text-left shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition"
+          >
+            <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-amber-100 text-amber-700 mb-4">
+              <Settings2 size={20} aria-hidden="true" />
+            </div>
+            <h2 className="text-2xl font-semibold text-base-content">Manage Data</h2>
+            <p className="mt-2 text-base-content/70">
+              Create, update, search, and remove courses, rooms, trainers, equipment, and learner groups.
             </p>
           </button>
         </div>

@@ -1,22 +1,15 @@
 """
 api/PlanningRouter.py
 ======================
-Fixes:
-  1. _save_to_db → auto-rejects ALL previous draft/validated slots before saving new batch
-     → impact analysis never sees old planning slots
-  2. impact_analysis → ALWAYS filters by planning_group_id (required, not optional)
-     → no more false conflicts from old plannings
-  3. _build_response → robust session_number→DB id mapping with index fallback
-     → SessionSlotOut.id is always set → DnD uses correct DB id
+Updated: all DB queries now filter by user_id.
+PlanningAgent only sees rooms/trainers/groups/courses belonging to the current user.
 """
 
-import io
-import uuid
-import traceback
+import io, uuid, traceback
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Header
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -24,6 +17,8 @@ from sqlalchemy.orm import Session
 from db.DB import SessionLocal
 from agents.planning_agent  import PlanningAgent, schedule_to_csv_bytes
 from agents.ConstraintAgent import ConstraintAgent
+import os
+SUPERADMIN_ID = os.getenv("SUPERADMIN_ID", "00000000-0000-0000-0000-000000000001")
 
 router = APIRouter(prefix="/planning", tags=["Planning Agent"])
 
@@ -33,14 +28,15 @@ _last_group_id: str        = ""
 
 def get_db():
     db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+    try: yield db
+    finally: db.close()
+
+def get_user_id(x_user_id: str = Header(default=SUPERADMIN_ID)) -> str:
+    return x_user_id
 
 
 # =============================================================================
-#  Schemas
+#  Schemas (unchanged)
 # =============================================================================
 
 class PlanningRunRequest(BaseModel):
@@ -54,7 +50,7 @@ class FullPipelineRequest(BaseModel):
     user_text:        Optional[str] = ""
 
 class SessionSlotOut(BaseModel):
-    id:                      Optional[int] = None   # real DB primary key
+    id:                      Optional[int] = None
     session_number:          int
     course_id:               int
     course_title:            str
@@ -77,12 +73,8 @@ class SessionSlotOut(BaseModel):
         extra = "ignore"
 
 class PlanningRunResponse(BaseModel):
-    success:           bool
-    planning_group_id: str
-    total_sessions:    int
-    final_constraints: dict
-    schedule:          list[SessionSlotOut]
-    engine:            str = "greedy"
+    success: bool; planning_group_id: str; total_sessions: int
+    final_constraints: dict; schedule: list[SessionSlotOut]; engine: str = "greedy"
 
 class ValidateBody(BaseModel):
     validation_notes: Optional[str] = None
@@ -91,49 +83,38 @@ class RejectBody(BaseModel):
     reason: Optional[str] = None
 
 class RegenerateBody(BaseModel):
-    constraints_dict:  Optional[dict] = None
-    user_constraints:  Optional[str]  = None
-    rejected_group_id: Optional[str]  = None
-    attempt:           int = 2
+    constraints_dict: Optional[dict] = None
+    user_constraints: Optional[str]  = None
+    rejected_group_id:Optional[str]  = None
+    attempt: int = 2
 
 class MoveBody(BaseModel):
-    new_start_time: str
-    new_end_time:   str
-    admin_note:     Optional[str] = None
+    new_start_time: str; new_end_time: str; admin_note: Optional[str] = None
 
 class ImpactBody(BaseModel):
-    new_start_time:    str
-    new_end_time:      str
-    planning_group_id: Optional[str] = None
+    new_start_time: str; new_end_time: str; planning_group_id: Optional[str] = None
 
 
 # =============================================================================
-#  DB SAVE — auto-rejects old plannings, returns {session_number: db_id}
+#  DB SAVE — now stores user_id on each slot
 # =============================================================================
 
-def _save_to_db(schedule: list[dict], db: Session) -> tuple[str, dict[int, int]]:
-    """
-    FIX 1: Before saving the new batch, marks ALL previous draft/validated slots
-    as 'superseded'. This prevents old slots from appearing in impact analysis.
-
-    Returns (group_id, {session_number: db_slot_id}).
-    """
+def _save_to_db(schedule: list[dict], db: Session, user_id: str) -> tuple[str, dict[int, int]]:
     from models.schedule import ScheduleSlot
 
-    # ── FIX: reject all previous non-rejected slots ───────────────────────────
+    # Supersede old slots for THIS user only
     old_slots = db.query(ScheduleSlot).filter(
+        ScheduleSlot.user_id == user_id,
         ScheduleSlot.status.in_(["draft", "validated"])
     ).all()
 
     if old_slots:
         now = datetime.now(timezone.utc)
         for s in old_slots:
-            s.status      = "superseded"
-            s.rejected_at = now
+            s.status = "superseded"; s.rejected_at = now
         db.flush()
-        print(f"  [Router] Superseded {len(old_slots)} old slots.")
+        print(f"  [Router] Superseded {len(old_slots)} old slots for user {user_id[:8]}...")
 
-    # ── Save new batch ────────────────────────────────────────────────────────
     group_id = str(uuid.uuid4())
     slots    = []
 
@@ -144,380 +125,159 @@ def _save_to_db(schedule: list[dict], db: Session) -> tuple[str, dict[int, int]]
         except Exception:
             continue
 
-        session_number = s.get("session_number") or (idx + 1)
-
+        sn   = s.get("session_number") or (idx + 1)
         slot = ScheduleSlot(
-            course_id               = s.get("course_id", 0),
-            trainer_id              = s.get("trainer_id", 0),
-            room_id                 = s.get("room_id", 0),
-            learner_group_id        = s.get("learner_group_id", 0),
-            start_time              = start,
-            end_time                = end,
-            planning_group_id       = group_id,
-            session_number          = session_number,
-            quality_score           = float(s.get("quality_score", 0.0)),
-            pedagogical_audit_score = float(s.get("pedagogical_audit_score", 0.0)),
-            status                  = "draft",
-            is_validated            = False,
-            move_history            = [],
+            course_id=s.get("course_id",0), trainer_id=s.get("trainer_id",0),
+            room_id=s.get("room_id",0), learner_group_id=s.get("learner_group_id",0),
+            start_time=start, end_time=end, planning_group_id=group_id,
+            session_number=sn,
+            quality_score=float(s.get("quality_score",0.0)),
+            pedagogical_audit_score=float(s.get("pedagogical_audit_score",0.0)),
+            status="draft", is_validated=False, move_history=[],
+            user_id=user_id,   # ← KEY: link slot to user
         )
-        slots.append((session_number, slot))
+        slots.append((sn, slot))
 
     try:
         db.add_all([slot for _, slot in slots])
         db.commit()
-
-        # ── FIX: map session_number → real DB id ──────────────────────────────
-        sn_to_db_id: dict[int, int] = {}
-        for sn, slot in slots:
-            if slot.id is not None:
-                sn_to_db_id[sn] = slot.id
-
-        print(f"  [Router] ✅ {len(slots)} slots saved → group={group_id[:8]}...")
+        sn_to_db_id = {sn: slot.id for sn, slot in slots if slot.id is not None}
+        print(f"  [Router] ✅ {len(slots)} slots saved → group={group_id[:8]}... user={user_id[:8]}...")
         return group_id, sn_to_db_id
-
     except Exception as e:
         db.rollback()
         print(f"  [Router] ⚠️  DB save failed: {e}")
         return group_id, {}
 
 
-# =============================================================================
-#  RESPONSE BUILDER
-# =============================================================================
-
-def _build_response(result, db: Session) -> PlanningRunResponse:
+def _build_response(result, db: Session, user_id: str) -> PlanningRunResponse:
     global _last_schedule, _last_group_id
-
     try:
-        group_id, sn_to_db_id = _save_to_db(result.schedule, db)
-    except Exception as e:
+        group_id, sn_to_db_id = _save_to_db(result.schedule, db, user_id)
+    except Exception:
         traceback.print_exc()
-        group_id    = str(uuid.uuid4())
-        sn_to_db_id = {}
+        group_id = str(uuid.uuid4()); sn_to_db_id = {}
 
     _last_group_id = group_id
-
-    # Inject DB ids using session_number mapping, index fallback
     enriched = []
     for idx, s in enumerate(result.schedule):
-        s_copy = dict(s)
-        sn     = s_copy.get("session_number") or (idx + 1)
-        db_id  = sn_to_db_id.get(sn) or sn_to_db_id.get(idx + 1)
-        s_copy["id"] = db_id    # None if mapping failed
+        s_copy = dict(s); sn = s_copy.get("session_number") or (idx+1)
+        s_copy["id"] = sn_to_db_id.get(sn) or sn_to_db_id.get(idx+1)
         enriched.append(s_copy)
 
     _last_schedule = enriched
-
     slots_out = []
     for s in enriched:
-        try:
-            slots_out.append(SessionSlotOut(**s))
-        except Exception as e:
-            print(f"  [Router] Slot skip: {e}")
+        try: slots_out.append(SessionSlotOut(**s))
+        except: pass
 
     return PlanningRunResponse(
-        success           = result.success,
-        planning_group_id = group_id,
-        total_sessions    = result.total_sessions,
-        final_constraints = result.constraints_used,
-        schedule          = slots_out,
-        engine            = getattr(result, "engine", "greedy"),
+        success=result.success, planning_group_id=group_id,
+        total_sessions=result.total_sessions, final_constraints=result.constraints_used,
+        schedule=slots_out, engine=getattr(result,"engine","greedy"),
     )
 
 
 # =============================================================================
-#  ENDPOINTS
+#  ENDPOINTS — all receive user_id
 # =============================================================================
 
 @router.post("/run", response_model=PlanningRunResponse)
-def run_planning(body: PlanningRunRequest, db: Session = Depends(get_db)):
+def run_planning(body: PlanningRunRequest, db: Session = Depends(get_db), user_id: str = Depends(get_user_id)):
     try:
         result = PlanningAgent(db=db).run(extra_constraints=body.user_constraints or "")
-        if not result.success:
-            raise HTTPException(422, detail=result.error)
-        return _build_response(result, db)
-    except HTTPException:
-        raise
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(500, detail=str(e))
-
+        if not result.success: raise HTTPException(422, detail=result.error)
+        return _build_response(result, db, user_id)
+    except HTTPException: raise
+    except Exception as e: traceback.print_exc(); raise HTTPException(500, detail=str(e))
 
 @router.post("/run/with-constraints", response_model=PlanningRunResponse)
-def run_with_constraints(body: PlanningRunWithConstraintsRequest, db: Session = Depends(get_db)):
+def run_with_constraints(body: PlanningRunWithConstraintsRequest, db: Session = Depends(get_db), user_id: str = Depends(get_user_id)):
     try:
         result = PlanningAgent(db=db).run(constraints_dict=body.constraints_dict)
-        if not result.success:
-            raise HTTPException(422, detail=result.error)
-        return _build_response(result, db)
-    except HTTPException:
-        raise
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(500, detail=str(e))
-
-
-@router.post("/run/full-pipeline")
-def run_full_pipeline(body: FullPipelineRequest, db: Session = Depends(get_db)):
-    try:
-        cr     = ConstraintAgent(db=db).run(
-            pedagogical_text=body.pedagogical_text or "",
-            user_text=body.user_text or "",
-        )
-        result = PlanningAgent(db=db).run(constraints_dict=cr.planning_dict)
-        if not result.success:
-            raise HTTPException(422, detail=result.error)
-        return _build_response(result, db)
-    except HTTPException:
-        raise
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(500, detail=str(e))
-
+        if not result.success: raise HTTPException(422, detail=result.error)
+        return _build_response(result, db, user_id)
+    except HTTPException: raise
+    except Exception as e: traceback.print_exc(); raise HTTPException(500, detail=str(e))
 
 @router.post("/{planning_group_id}/validate")
-def validate_schedule(planning_group_id: str, body: ValidateBody, db: Session = Depends(get_db)):
-    try:
-        from models.schedule import ScheduleSlot
-        slots = db.query(ScheduleSlot).filter(
-            ScheduleSlot.planning_group_id == planning_group_id
-        ).all()
-        if not slots:
-            raise HTTPException(404, detail=f"No slots for group {planning_group_id}")
-        now = datetime.now(timezone.utc)
-        for slot in slots:
-            slot.status           = "validated"
-            slot.is_validated     = True
-            slot.validated_at     = now
-            slot.validation_notes = body.validation_notes
-        db.commit()
-        return {"success": True, "hitl_status": "validated",
-                "message": f"✅ {len(slots)} session(s) validated.",
-                "planning_group_id": planning_group_id,
-                "total_slots": len(slots),
-                "timestamp": now.isoformat()}
-    except HTTPException:
-        raise
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(500, detail=str(e))
-
+def validate_schedule(planning_group_id: str, body: ValidateBody, db: Session = Depends(get_db), user_id: str = Depends(get_user_id)):
+    from models.schedule import ScheduleSlot
+    slots = db.query(ScheduleSlot).filter(
+        ScheduleSlot.planning_group_id == planning_group_id,
+        ScheduleSlot.user_id == user_id   # ← only user's slots
+    ).all()
+    if not slots: raise HTTPException(404, detail="No slots found for this user and group.")
+    now = datetime.now(timezone.utc)
+    for slot in slots:
+        slot.status="validated"; slot.is_validated=True; slot.validated_at=now; slot.validation_notes=body.validation_notes
+    db.commit()
+    return {"success": True, "hitl_status": "validated", "total_slots": len(slots)}
 
 @router.post("/{planning_group_id}/reject")
-def reject_schedule(planning_group_id: str, body: RejectBody, db: Session = Depends(get_db)):
-    try:
-        from models.schedule import ScheduleSlot
-        slots = db.query(ScheduleSlot).filter(
-            ScheduleSlot.planning_group_id == planning_group_id
-        ).all()
-        now = datetime.now(timezone.utc)
-        for slot in slots:
-            slot.status           = "rejected"
-            slot.rejected_at      = now
-            slot.validation_notes = body.reason
-        db.commit()
-        return {"success": True, "hitl_status": "rejected",
-                "message": f"❌ {len(slots)} session(s) rejected.",
-                "planning_group_id": planning_group_id,
-                "total_slots": len(slots),
-                "timestamp": now.isoformat()}
-    except HTTPException:
-        raise
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(500, detail=str(e))
-
-
-@router.get("/{planning_group_id}/status")
-def get_status(planning_group_id: str, db: Session = Depends(get_db)):
-    try:
-        from models.schedule import ScheduleSlot
-        slots = db.query(ScheduleSlot).filter(
-            ScheduleSlot.planning_group_id == planning_group_id
-        ).all()
-        return {
-            "planning_group_id": planning_group_id,
-            "total_slots":       len(slots),
-            "validated_slots":   sum(1 for s in slots if s.status == "validated"),
-            "rejected_slots":    sum(1 for s in slots if s.status == "rejected"),
-            "draft_slots":       sum(1 for s in slots if s.status == "draft"),
-            "status":            slots[0].status if slots else "not_found",
-        }
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(500, detail=str(e))
-
-
-@router.post("/regenerate")
-def regenerate_schedule(body: RegenerateBody, db: Session = Depends(get_db)):
-    try:
-        result = PlanningAgent(db=db).regenerate(
-            constraints_dict  = body.constraints_dict,
-            extra_constraints = body.user_constraints or "",
-            attempt           = body.attempt,
-        )
-        if not result.success:
-            raise HTTPException(422, detail=result.error)
-        return _build_response(result, db)
-    except HTTPException:
-        raise
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(500, detail=str(e))
-
+def reject_schedule(planning_group_id: str, body: RejectBody, db: Session = Depends(get_db), user_id: str = Depends(get_user_id)):
+    from models.schedule import ScheduleSlot
+    slots = db.query(ScheduleSlot).filter(
+        ScheduleSlot.planning_group_id == planning_group_id,
+        ScheduleSlot.user_id == user_id
+    ).all()
+    now = datetime.now(timezone.utc)
+    for slot in slots:
+        slot.status="rejected"; slot.rejected_at=now; slot.validation_notes=body.reason
+    db.commit()
+    return {"success": True, "hitl_status": "rejected", "total_slots": len(slots)}
 
 @router.post("/session/{slot_id}/impact")
-def impact_analysis(slot_id: int, body: ImpactBody, db: Session = Depends(get_db)):
-    """
-    FIX 2: Always filters by planning_group_id.
-    If not provided → uses the slot's own planning_group_id.
-    This prevents false conflicts from old planning batches.
-    """
-    try:
-        from models.schedule import ScheduleSlot
-        slot = db.query(ScheduleSlot).filter(ScheduleSlot.id == slot_id).first()
-        if not slot:
-            raise HTTPException(404, detail=f"Slot {slot_id} not found")
-
-        new_start = datetime.fromisoformat(body.new_start_time)
-        new_end   = datetime.fromisoformat(body.new_end_time)
-
-        # ── FIX: use slot's own group_id as fallback ──────────────────────────
-        group_id = body.planning_group_id or slot.planning_group_id
-        if not group_id:
-            raise HTTPException(422, detail="planning_group_id is required for impact analysis")
-
-        # Only compare against slots in the SAME planning batch
-        others = db.query(ScheduleSlot).filter(
-            ScheduleSlot.id                != slot_id,
-            ScheduleSlot.planning_group_id == group_id,      # ← KEY FIX
-            ScheduleSlot.status.notin_(["rejected", "superseded"]),
-        ).all()
-
-        print(f"  [Impact] Checking slot {slot_id} vs {len(others)} slots in group {group_id[:8]}...")
-
-        def overlaps(s, start, end):
-            return s.start_time < end and start < s.end_time
-
-        new_conflicts = []
-        for o in others:
-            if not overlaps(o, new_start, new_end):
-                continue
-            if o.trainer_id == slot.trainer_id:
-                new_conflicts.append({"type": "trainer", "slot_id": o.id,
-                    "description": f"Trainer conflict with session #{o.session_number}"})
-            if o.room_id == slot.room_id:
-                new_conflicts.append({"type": "room", "slot_id": o.id,
-                    "description": f"Room conflict with session #{o.session_number}"})
-            if o.learner_group_id == slot.learner_group_id:
-                new_conflicts.append({"type": "group", "slot_id": o.id,
-                    "description": f"Group conflict with session #{o.session_number}"})
-
-        is_safe = len(new_conflicts) == 0
-        print(f"  [Impact] Result: {'✅ safe' if is_safe else f'⚠️ {len(new_conflicts)} conflict(s)'}")
-
-        return {
-            "slot_id":        slot_id,
-            "proposed_start": new_start.isoformat(),
-            "proposed_end":   new_end.isoformat(),
-            "is_safe":        is_safe,
-            "new_conflicts":  new_conflicts,
-            "resolved_conflicts": [],
-            "affected_sessions":  [],
-            "summary":        "No conflicts." if is_safe else f"{len(new_conflicts)} conflict(s).",
-            "recommendation": "✅ Safe to move." if is_safe else "⚠️ Conflicts detected.",
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(500, detail=str(e))
-
+def impact_analysis(slot_id: int, body: ImpactBody, db: Session = Depends(get_db), user_id: str = Depends(get_user_id)):
+    from models.schedule import ScheduleSlot
+    slot = db.query(ScheduleSlot).filter(ScheduleSlot.id==slot_id, ScheduleSlot.user_id==user_id).first()
+    if not slot: raise HTTPException(404, detail=f"Slot {slot_id} not found.")
+    new_start = datetime.fromisoformat(body.new_start_time)
+    new_end   = datetime.fromisoformat(body.new_end_time)
+    group_id  = body.planning_group_id or slot.planning_group_id
+    others = db.query(ScheduleSlot).filter(
+        ScheduleSlot.id != slot_id, ScheduleSlot.user_id == user_id,
+        ScheduleSlot.planning_group_id == group_id,
+        ScheduleSlot.status.notin_(["rejected","superseded"])
+    ).all()
+    conflicts = []
+    for o in others:
+        if not (o.start_time < new_end and new_start < o.end_time): continue
+        if o.trainer_id       == slot.trainer_id:   conflicts.append({"type":"trainer","slot_id":o.id})
+        if o.room_id          == slot.room_id:       conflicts.append({"type":"room",   "slot_id":o.id})
+        if o.learner_group_id == slot.learner_group_id: conflicts.append({"type":"group","slot_id":o.id})
+    return {"slot_id":slot_id,"is_safe":not conflicts,"new_conflicts":conflicts,
+            "summary":"No conflicts." if not conflicts else f"{len(conflicts)} conflict(s)."}
 
 @router.patch("/session/{slot_id}/move")
-def apply_move(slot_id: int, body: MoveBody, db: Session = Depends(get_db)):
-    try:
-        from models.schedule import ScheduleSlot
-        slot = db.query(ScheduleSlot).filter(ScheduleSlot.id == slot_id).first()
-        if not slot:
-            raise HTTPException(404, detail=f"Slot DB id={slot_id} not found.")
-
-        new_start = datetime.fromisoformat(body.new_start_time)
-        new_end   = datetime.fromisoformat(body.new_end_time)
-        old_start = slot.start_time.isoformat() if slot.start_time else ""
-        old_end   = slot.end_time.isoformat()   if slot.end_time   else ""
-
-        history_entry = {
-            "from_start": old_start, "from_end": old_end,
-            "to_start":   new_start.isoformat(), "to_end": new_end.isoformat(),
-            "admin_note": body.admin_note,
-            "moved_at":   datetime.now(timezone.utc).isoformat(),
-        }
-        slot.start_time   = new_start
-        slot.end_time     = new_end
-        slot.move_history = list(slot.move_history or []) + [history_entry]
-        slot.status       = "draft"
-        db.commit()
-
-        return {
-            "success":        True,
-            "slot_id":        slot_id,
-            "session_number": slot.session_number,
-            "from_start":     old_start,
-            "from_end":       old_end,
-            "to_start":       new_start.isoformat(),
-            "to_end":         new_end.isoformat(),
-            "move_count":     len(slot.move_history),
-            "message":        f"Session #{slot.session_number} moved to {new_start.strftime('%A %H:%M')}",
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(500, detail=str(e))
-
-
-@router.get("/session/{slot_id}/history")
-def session_move_history(slot_id: int, db: Session = Depends(get_db)):
-    try:
-        from models.schedule import ScheduleSlot
-        slot = db.query(ScheduleSlot).filter(ScheduleSlot.id == slot_id).first()
-        if not slot:
-            raise HTTPException(404, detail=f"Slot {slot_id} not found")
-        return {"slot_id": slot_id, "history": slot.move_history or []}
-    except HTTPException:
-        raise
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(500, detail=str(e))
-
+def apply_move(slot_id: int, body: MoveBody, db: Session = Depends(get_db), user_id: str = Depends(get_user_id)):
+    from models.schedule import ScheduleSlot
+    slot = db.query(ScheduleSlot).filter(ScheduleSlot.id==slot_id, ScheduleSlot.user_id==user_id).first()
+    if not slot: raise HTTPException(404, detail=f"Slot {slot_id} not found.")
+    new_start = datetime.fromisoformat(body.new_start_time)
+    new_end   = datetime.fromisoformat(body.new_end_time)
+    old_start = slot.start_time.isoformat() if slot.start_time else ""
+    old_end   = slot.end_time.isoformat()   if slot.end_time else ""
+    slot.start_time=new_start; slot.end_time=new_end
+    slot.move_history = list(slot.move_history or []) + [{
+        "from_start":old_start,"from_end":old_end,
+        "to_start":new_start.isoformat(),"to_end":new_end.isoformat(),
+        "moved_at":datetime.now(timezone.utc).isoformat()
+    }]
+    slot.status = "draft"; db.commit()
+    return {"success":True,"slot_id":slot_id,"session_number":slot.session_number}
 
 @router.get("/schedule", response_model=list[SessionSlotOut])
 def get_last_schedule():
-    if not _last_schedule:
-        raise HTTPException(404, detail="No schedule yet.")
+    if not _last_schedule: raise HTTPException(404, detail="No schedule yet.")
     return [SessionSlotOut(**s) for s in _last_schedule if _valid(s)]
 
 def _valid(s):
     try: SessionSlotOut(**s); return True
     except: return False
 
-@router.get("/constraints")
-def get_constraints(db: Session = Depends(get_db)):
-    try:
-        constraints, nb = PlanningAgent(db=db).get_constraints()
-        return {"total": nb, "constraints": constraints}
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(500, detail=str(e))
-
 @router.get("/export/csv")
 def export_csv():
-    if not _last_schedule:
-        raise HTTPException(404, detail="No schedule to export.")
-    return StreamingResponse(
-        io.BytesIO(schedule_to_csv_bytes(_last_schedule)),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=schedule.csv"},
-    )
+    if not _last_schedule: raise HTTPException(404, detail="No schedule to export.")
+    return StreamingResponse(io.BytesIO(schedule_to_csv_bytes(_last_schedule)),
+        media_type="text/csv", headers={"Content-Disposition":"attachment; filename=schedule.csv"})

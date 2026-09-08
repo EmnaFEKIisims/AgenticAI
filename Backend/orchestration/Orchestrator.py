@@ -1,11 +1,21 @@
 """
 orchestration/orchestrator.py
 ==============================
-LangGraph orchestrator — updated to include the Pedagogical Agent.
+LangGraph orchestrator — updated with RAG integration.
+
+RAG is added at 5 key events:
+  1. BEFORE planning → retrieve context (user preferences, past decisions)
+  2. AFTER validation → store positive signal
+  3. AFTER rejection  → extract and store negative feedback
+  4. AFTER anomaly    → store conflict patterns
+  5. AFTER move (API) → store DnD preference signal
 
 Full pipeline:
 
   START
+    │
+    ▼
+  [init_rag_user]          ensure User exists in DB for RAG memory
     │
     ▼
   [upload_data]            DataAgent: parse → LLM extract → validate → TempStorage
@@ -21,21 +31,30 @@ Full pipeline:
     ├── N ────────────────► END
     │
     ▼
-  [run_planning]           PlanningAgent: constraints + greedy scheduling
+  [retrieve_rag_context]   RAG: get adaptive context from past experiences   ← NEW
+    │
+    ▼
+  [run_planning]           PlanningAgent: constraints + RAG context + greedy scheduling
     │
     ▼
   [wait_for_validation]    PAUSE — user validates or rejects the schedule
     │
-    ├── rejected ─────────► END
+    ├── rejected → [store_rejection_memory] ──────────────────────────────► END
+    │
+    ▼
+  [store_validation_memory]                                                  ← NEW
     │
     ▼
   [run_pedagogical_audit]  PedagogicalAgent (LangGraph): 6 validators + LLM
     │
     ▼
-  [run_anomaly_detection]  AnomalyAgent: detect → classify → resolve → notify  ← NEW
+  [run_anomaly_detection]  AnomalyAgent: detect → classify → resolve → notify
     │
     ▼
-  [wait_for_anomaly_hitl]  PAUSE — admin reviews anomalies                      ← NEW
+  [store_anomaly_memory]                                                     ← NEW
+    │
+    ▼
+  [wait_for_anomaly_hitl]  PAUSE — admin reviews anomalies
     │
     ▼
   [show_audit_report]      Prints audit score, grade, recommendations + anomalies
@@ -52,11 +71,17 @@ from sqlalchemy.orm import Session
 from agents.Data_Manager      import DataAgent, UploadResult
 from agents.planning_agent    import PlanningAgent, PlanningResult
 from agents.pedagogical_agent import PedagogicalAgent
-from agents.Anomaly           import AnomalyAgent, AnomalyAgentResult          # ← NEW
+from agents.Anomaly           import AnomalyAgent, AnomalyAgentResult
 
 from Services.PedagogicalAgent.Schemas.audit_schema    import AuditReport
 from Services.PedagogicalAgent.Schemas.Planning_schema import Planning
 from Services.DataManager.Temp_storage                 import TempStorage
+
+# RAG integration
+from Services.RAG.rag_service import RAGService
+
+# Default user_id for terminal mode (no frontend UUID available)
+DEFAULT_TERMINAL_USER_ID = "system-terminal-orchestrator"
 
 
 # =============================================================================
@@ -68,6 +93,7 @@ class OrchestratorState(TypedDict):
     filepath:          str
     filename:          str
     extra_constraints: str
+    user_id:           str           # RAG user identifier
 
     # DataAgent outputs
     upload_result:     Optional[UploadResult]
@@ -77,6 +103,9 @@ class OrchestratorState(TypedDict):
     # User decision after HITL
     user_wants_planning: bool
 
+    # RAG context
+    rag_context:       str           # context retrieved from ChromaDB
+
     # PlanningAgent outputs
     planning_result:   Optional[PlanningResult]
     schedule_status:   str           # "pending" | "validated" | "rejected"
@@ -85,13 +114,34 @@ class OrchestratorState(TypedDict):
     audit_report:      Optional[AuditReport]
     audit_status:      str           # "pending" | "done" | "skipped"
 
-    # AnomalyAgent outputs                                                      ← NEW
+    # AnomalyAgent outputs
     anomaly_result:      Optional[AnomalyAgentResult]
     anomaly_status:      str         # "pending" | "reviewed" | "skipped"
     user_anomaly_action: str         # "continue" | "abort"
 
     # Error
     error:             str
+
+
+# =============================================================================
+#  NODE 0 — Initialize RAG User  ← NEW
+# =============================================================================
+
+def node_init_rag_user(state: OrchestratorState, db: Session) -> dict:
+    """
+    Ensures the RAG user exists in the DB.
+    In terminal mode, uses a fixed system UUID.
+    In API mode, the user_id comes from the frontend localStorage UUID.
+    """
+    print("\n[Orchestrator] Node: init_rag_user")
+    user_id = state.get("user_id") or DEFAULT_TERMINAL_USER_ID
+    try:
+        svc  = RAGService(db)
+        user = svc.ensure_user(user_id, "System Administrator")
+        print(f"  → RAG user: {user_id[:8]}... ({user.display_name})")
+    except Exception as e:
+        print(f"  ⚠️  RAG user init failed: {e} (continuing without RAG)")
+    return {"user_id": user_id}
 
 
 # =============================================================================
@@ -169,14 +219,50 @@ def node_ask_user_planning(state: OrchestratorState) -> dict:
 
 
 # =============================================================================
-#  NODE 4 — PlanningAgent
+#  NODE 4 — Retrieve RAG context  ← NEW
+# =============================================================================
+
+def node_retrieve_rag_context(state: OrchestratorState, db: Session) -> dict:
+    """
+    Retrieves adaptive context from past experiences BEFORE planning.
+    The context (preferences, past decisions, feedback) is injected into
+    the LLM prompt of PlanningAgent.
+    """
+    print("\n[Orchestrator] Node: retrieve_rag_context")
+    user_id = state.get("user_id", DEFAULT_TERMINAL_USER_ID)
+
+    try:
+        svc     = RAGService(db)
+        context = svc.get_planning_context(user_id)
+        if context:
+            print(f"  → RAG context retrieved ({len(context)} chars)")
+            print("  → Past preferences/decisions will influence this planning.")
+        else:
+            print("  → No past context found (first planning or empty memory).")
+        return {"rag_context": context}
+    except Exception as e:
+        print(f"  ⚠️  RAG retrieval failed: {e} (continuing without context)")
+        return {"rag_context": ""}
+
+
+# =============================================================================
+#  NODE 5 — PlanningAgent (with RAG context injection)
 # =============================================================================
 
 def node_run_planning(state: OrchestratorState, db: Session) -> dict:
     print("\n[Orchestrator] Node: run_planning")
 
     agent  = PlanningAgent(db=db)
-    result = agent.run(extra_constraints=state.get("extra_constraints", ""))
+    user_id = state.get("user_id", DEFAULT_TERMINAL_USER_ID)
+    rag_context = state.get("rag_context", "")
+
+    # Inject RAG context into extra_constraints
+    # The PlanningAgent will prepend this to its LLM system prompt
+    enriched_constraints = state.get("extra_constraints", "")
+    if rag_context:
+        enriched_constraints = f"{rag_context}\n\n{enriched_constraints}".strip()
+
+    result = agent.run(extra_constraints=enriched_constraints)
 
     if not result.success:
         return {
@@ -186,6 +272,17 @@ def node_run_planning(state: OrchestratorState, db: Session) -> dict:
         }
 
     print(f"  → {result.total_sessions} session(s) generated.")
+
+    # Store generation event in RAG memory
+    try:
+        RAGService(db).after_planning_generated(
+            user_id     = user_id,
+            schedule    = result.schedule,
+            constraints = result.constraints_used,
+        )
+    except Exception as e:
+        print(f"  ⚠️  RAG storage failed: {e}")
+
     return {
         "planning_result": result,
         "schedule_status": "pending",
@@ -194,7 +291,7 @@ def node_run_planning(state: OrchestratorState, db: Session) -> dict:
 
 
 # =============================================================================
-#  NODE 5 — HITL: validate or reject schedule
+#  NODE 6 — HITL: validate or reject schedule
 # =============================================================================
 
 def node_wait_for_validation(state: OrchestratorState) -> dict:
@@ -216,12 +313,56 @@ def node_wait_for_validation(state: OrchestratorState) -> dict:
     if answer == "Y":
         print("  [OK] Schedule validated.")
         return {"schedule_status": "validated"}
+
+    reason = input("  Rejection reason (Enter to skip): ").strip()
     print("  [CANCELLED] Schedule rejected.")
-    return {"schedule_status": "rejected"}
+    return {"schedule_status": "rejected", "error": reason}
 
 
 # =============================================================================
-#  NODE 6 — PedagogicalAgent
+#  NODE 7a — Store validation memory  ← NEW
+# =============================================================================
+
+def node_store_validation_memory(state: OrchestratorState, db: Session) -> dict:
+    """Stores positive memory after planning validation."""
+    print("\n[Orchestrator] Node: store_validation_memory")
+    user_id = state.get("user_id", DEFAULT_TERMINAL_USER_ID)
+    result  = state.get("planning_result")
+    try:
+        RAGService(db).after_planning_validated(
+            user_id     = user_id,
+            schedule    = result.schedule if result else [],
+            constraints = result.constraints_used if result else {},
+            notes       = "Admin validated in terminal mode",
+        )
+        print("  → Validation memory stored in RAG.")
+    except Exception as e:
+        print(f"  ⚠️  RAG storage failed: {e}")
+    return {}
+
+
+# =============================================================================
+#  NODE 7b — Store rejection memory  ← NEW
+# =============================================================================
+
+def node_store_rejection_memory(state: OrchestratorState, db: Session) -> dict:
+    """Extracts and stores feedback memories from rejection."""
+    print("\n[Orchestrator] Node: store_rejection_memory")
+    user_id = state.get("user_id", DEFAULT_TERMINAL_USER_ID)
+    reason  = state.get("error", "")
+    try:
+        RAGService(db).after_planning_rejected(user_id=user_id, reason=reason)
+        if reason:
+            print(f"  → Rejection memory stored: '{reason[:60]}...'")
+        else:
+            print("  → Rejection stored (no reason given).")
+    except Exception as e:
+        print(f"  ⚠️  RAG storage failed: {e}")
+    return {}
+
+
+# =============================================================================
+#  NODE 8 — PedagogicalAgent
 # =============================================================================
 
 def node_run_pedagogical_audit(state: OrchestratorState) -> dict:
@@ -240,14 +381,13 @@ def node_run_pedagogical_audit(state: OrchestratorState) -> dict:
         )
         print(f"  → Audit done. Score={report.score_label} Grade={report.grade.value}")
         return {"audit_report": report, "audit_status": "done"}
-
     except Exception as e:
         print(f"  ❌ Pedagogical audit failed: {e}")
         return {"audit_report": None, "audit_status": "skipped", "error": str(e)}
 
 
 # =============================================================================
-#  NODE 7 — AnomalyAgent                                                       ← NEW
+#  NODE 9 — AnomalyAgent
 # =============================================================================
 
 def node_run_anomaly_detection(state: OrchestratorState, db: Session) -> dict:
@@ -269,7 +409,32 @@ def node_run_anomaly_detection(state: OrchestratorState, db: Session) -> dict:
 
 
 # =============================================================================
-#  NODE 8 — HITL: admin reviews anomalies                                      ← NEW
+#  NODE 10 — Store anomaly memory  ← NEW
+# =============================================================================
+
+def node_store_anomaly_memory(state: OrchestratorState, db: Session) -> dict:
+    """Stores detected conflicts as CONFLICT_CORRECTION memories."""
+    print("\n[Orchestrator] Node: store_anomaly_memory")
+    user_id = state.get("user_id", DEFAULT_TERMINAL_USER_ID)
+    result  = state.get("anomaly_result")
+
+    if not result or result.total_detected == 0:
+        print("  → No anomalies to store.")
+        return {}
+
+    try:
+        RAGService(db).after_anomaly(
+            user_id   = user_id,
+            anomalies = result.anomalies,
+        )
+        print(f"  → {result.high_count + result.medium_count} anomaly memories stored.")
+    except Exception as e:
+        print(f"  ⚠️  RAG storage failed: {e}")
+    return {}
+
+
+# =============================================================================
+#  NODE 11 — HITL: admin reviews anomalies
 # =============================================================================
 
 def node_wait_for_anomaly_hitl(state: OrchestratorState) -> dict:
@@ -297,13 +462,12 @@ def node_wait_for_anomaly_hitl(state: OrchestratorState) -> dict:
 
 
 # =============================================================================
-#  NODE 9 — Display audit report + anomaly summary
+#  NODE 12 — Display audit report + anomaly summary
 # =============================================================================
 
 def node_show_audit_report(state: OrchestratorState) -> dict:
     print("\n[Orchestrator] Node: show_audit_report")
 
-    # Pedagogical report
     report = state.get("audit_report")
     if report:
         W = 60
@@ -325,7 +489,6 @@ def node_show_audit_report(state: OrchestratorState) -> dict:
                 print(f"    {i}. {rec[:100]}")
         print(f"{'='*W}")
 
-    # Anomaly summary                                                           ← NEW
     anomaly_result = state.get("anomaly_result")
     if anomaly_result and anomaly_result.total_detected > 0:
         print(f"\n  ANOMALY SUMMARY")
@@ -333,7 +496,11 @@ def node_show_audit_report(state: OrchestratorState) -> dict:
         print(f"  🔴 HIGH   : {anomaly_result.high_count}")
         print(f"  🟡 MEDIUM : {anomaly_result.medium_count}")
         print(f"  🟢 LOW    : {anomaly_result.low_count}")
-        print(f"  Notifs    : {len(anomaly_result.notification_ids)} created")
+
+    # RAG summary
+    print(f"\n  RAG MEMORY")
+    print(f"  Memories stored during this session.")
+    print(f"  They will influence the NEXT planning generation.")
 
     action = state.get("user_anomaly_action", "continue")
     print(f"\n  {'✅ Planning FINALIZED' if action == 'continue' else '❌ Planning ABORTED'}")
@@ -349,27 +516,27 @@ def _grade_label(grade: str) -> str:
 
 
 # =============================================================================
-#  ROUTING CONDITIONS
+#  ROUTING
 # =============================================================================
 
 def route_after_hitl(state: OrchestratorState) -> Literal["ask_user_planning", "__end__"]:
     return "ask_user_planning" if state.get("data_status") == "approved" else "__end__"
 
 
-def route_after_ask_planning(state: OrchestratorState) -> Literal["run_planning", "__end__"]:
-    return "run_planning" if state.get("user_wants_planning") else "__end__"
+def route_after_ask_planning(state: OrchestratorState) -> Literal["retrieve_rag_context", "__end__"]:
+    return "retrieve_rag_context" if state.get("user_wants_planning") else "__end__"
 
 
 def route_after_validation(
     state: OrchestratorState,
-) -> Literal["run_pedagogical_audit", "__end__"]:
-    return "run_pedagogical_audit" if state.get("schedule_status") == "validated" else "__end__"
+) -> Literal["store_validation_memory", "store_rejection_memory"]:
+    if state.get("schedule_status") == "validated":
+        return "store_validation_memory"
+    return "store_rejection_memory"
 
 
-def route_after_anomaly_hitl(                                                  # ← NEW
-    state: OrchestratorState,
-) -> Literal["show_audit_report"]:
-    return "show_audit_report"   # always show report whether continue or abort
+def route_after_anomaly_hitl(state: OrchestratorState) -> Literal["show_audit_report"]:
+    return "show_audit_report"
 
 
 # =============================================================================
@@ -379,36 +546,51 @@ def route_after_anomaly_hitl(                                                  #
 def build_graph(db: Session) -> StateGraph:
     graph = StateGraph(OrchestratorState)
 
-    graph.add_node("upload_data",            node_upload_data)
-    graph.add_node("wait_for_hitl",          node_wait_for_hitl)
-    graph.add_node("ask_user_planning",      node_ask_user_planning)
-    graph.add_node("run_planning",           lambda s: node_run_planning(s, db))
-    graph.add_node("wait_for_validation",    node_wait_for_validation)
-    graph.add_node("run_pedagogical_audit",  node_run_pedagogical_audit)
-    graph.add_node("run_anomaly_detection",  lambda s: node_run_anomaly_detection(s, db))  # ← NEW
-    graph.add_node("wait_for_anomaly_hitl",  node_wait_for_anomaly_hitl)                   # ← NEW
-    graph.add_node("show_audit_report",      node_show_audit_report)
+    # Nodes
+    graph.add_node("init_rag_user",           lambda s: node_init_rag_user(s, db))
+    graph.add_node("upload_data",             node_upload_data)
+    graph.add_node("wait_for_hitl",           node_wait_for_hitl)
+    graph.add_node("ask_user_planning",       node_ask_user_planning)
+    graph.add_node("retrieve_rag_context",    lambda s: node_retrieve_rag_context(s, db))
+    graph.add_node("run_planning",            lambda s: node_run_planning(s, db))
+    graph.add_node("wait_for_validation",     node_wait_for_validation)
+    graph.add_node("store_validation_memory", lambda s: node_store_validation_memory(s, db))
+    graph.add_node("store_rejection_memory",  lambda s: node_store_rejection_memory(s, db))
+    graph.add_node("run_pedagogical_audit",   node_run_pedagogical_audit)
+    graph.add_node("run_anomaly_detection",   lambda s: node_run_anomaly_detection(s, db))
+    graph.add_node("store_anomaly_memory",    lambda s: node_store_anomaly_memory(s, db))
+    graph.add_node("wait_for_anomaly_hitl",   node_wait_for_anomaly_hitl)
+    graph.add_node("show_audit_report",       node_show_audit_report)
 
-    graph.set_entry_point("upload_data")
-    graph.add_edge("upload_data", "wait_for_hitl")
+    # Edges
+    graph.set_entry_point("init_rag_user")
+    graph.add_edge("init_rag_user",           "upload_data")
+    graph.add_edge("upload_data",             "wait_for_hitl")
 
     graph.add_conditional_edges("wait_for_hitl", route_after_hitl,
         {"ask_user_planning": "ask_user_planning", "__end__": END})
 
     graph.add_conditional_edges("ask_user_planning", route_after_ask_planning,
-        {"run_planning": "run_planning", "__end__": END})
+        {"retrieve_rag_context": "retrieve_rag_context", "__end__": END})
 
-    graph.add_edge("run_planning", "wait_for_validation")
+    graph.add_edge("retrieve_rag_context",    "run_planning")
+    graph.add_edge("run_planning",            "wait_for_validation")
 
     graph.add_conditional_edges("wait_for_validation", route_after_validation,
-        {"run_pedagogical_audit": "run_pedagogical_audit", "__end__": END})
+        {"store_validation_memory": "store_validation_memory",
+         "store_rejection_memory":  "store_rejection_memory"})
 
-    graph.add_edge("run_pedagogical_audit", "run_anomaly_detection")           # ← NEW
-    graph.add_edge("run_anomaly_detection", "wait_for_anomaly_hitl")           # ← NEW
+    graph.add_edge("store_validation_memory", "run_pedagogical_audit")
+    graph.add_edge("store_rejection_memory",  END)
+
+    graph.add_edge("run_pedagogical_audit",   "run_anomaly_detection")
+    graph.add_edge("run_anomaly_detection",   "store_anomaly_memory")
+    graph.add_edge("store_anomaly_memory",    "wait_for_anomaly_hitl")
+
     graph.add_conditional_edges("wait_for_anomaly_hitl", route_after_anomaly_hitl,
-        {"show_audit_report": "show_audit_report"})                            # ← NEW
+        {"show_audit_report": "show_audit_report"})
 
-    graph.add_edge("show_audit_report", END)
+    graph.add_edge("show_audit_report",       END)
 
     return graph.compile()
 
@@ -427,26 +609,29 @@ class Orchestrator:
         filepath:          str,
         filename:          str,
         extra_constraints: str = "",
+        user_id:           str = DEFAULT_TERMINAL_USER_ID,
     ) -> OrchestratorState:
         print("\n" + "=" * 60)
-        print("  ORCHESTRATOR — DataAgent + PlanningAgent + PedagogicalAgent + AnomalyAgent")
+        print("  ORCHESTRATOR — with RAG Adaptive Memory")
         print("=" * 60)
 
         initial: OrchestratorState = {
             "filepath":            filepath,
             "filename":            filename,
             "extra_constraints":   extra_constraints,
+            "user_id":             user_id,
             "upload_result":       None,
             "upload_id":           None,
             "data_status":         "pending",
             "user_wants_planning": False,
+            "rag_context":         "",
             "planning_result":     None,
             "schedule_status":     "pending",
             "audit_report":        None,
             "audit_status":        "pending",
-            "anomaly_result":      None,          # ← NEW
-            "anomaly_status":      "pending",     # ← NEW
-            "user_anomaly_action": "continue",    # ← NEW
+            "anomaly_result":      None,
+            "anomaly_status":      "pending",
+            "user_anomaly_action": "continue",
             "error":               "",
         }
 
@@ -457,13 +642,10 @@ class Orchestrator:
         print(f"  Data status     : {final.get('data_status')}")
         print(f"  Schedule status : {final.get('schedule_status')}")
         print(f"  Audit status    : {final.get('audit_status')}")
-        print(f"  Anomaly status  : {final.get('anomaly_status')}")           # ← NEW
+        print(f"  Anomaly status  : {final.get('anomaly_status')}")
         if final.get("audit_report"):
             r = final["audit_report"]
             print(f"  Audit score     : {r.score_label} ({r.grade.value})")
-        if final.get("anomaly_result"):
-            a = final["anomaly_result"]
-            print(f"  Anomalies       : {a.total_detected} detected")        # ← NEW
         if final.get("error"):
             print(f"  Error           : {final['error']}")
         print("=" * 60)
@@ -479,7 +661,7 @@ if __name__ == "__main__":
     from db.DB import SessionLocal
 
     print("\n" + "=" * 60)
-    print("  ORCHESTRATOR — Terminal Mode")
+    print("  ORCHESTRATOR — Terminal Mode (with RAG)")
     print("=" * 60)
 
     filepath = input("\n  File path to upload (CSV / Excel / PDF): ").strip()

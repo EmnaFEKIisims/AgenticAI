@@ -31,6 +31,14 @@ from api.ConstraintRouter   import router as constraint_router
 from api.PedagogicalRouter  import router as pedagogical_router
 from api.AnomalyRouter  import router as anomaly_router
 from api.NotificationRouter  import router as notification_router
+from api.MemoryRouter import router as memory_router
+from api.RAGRouter import router as rag_router
+from api.UserRouter import router as user_router
+from api.RoomRouter         import router as room_router
+from api.TrainerRouter      import router as trainer_router
+from api.LearnerGroupRouter import router as learner_group_router
+from api.CourseRouter      import router as course_router
+from api.EquipmentRouter    import router as equipment_router
 
 
 def get_db():
@@ -133,6 +141,13 @@ async def lifespan(app: FastAPI):
 
     test_llm_connection()
 
+    # Test Qdrant
+    try:
+        from rag.rag_config import get_qdrant
+        get_qdrant()  # ← force la connexion + création des collections
+    except Exception as e:
+        print(f"  ⚠️  Qdrant non disponible: {e}")
+
     yield
     print("🛑 Shutting down...")
 
@@ -162,6 +177,14 @@ app.include_router(constraint_router)
 app.include_router(pedagogical_router)
 app.include_router(anomaly_router)
 app.include_router(notification_router)
+app.include_router(memory_router)
+app.include_router(user_router)
+app.include_router(rag_router)
+app.include_router(room_router)
+app.include_router(trainer_router)
+app.include_router(learner_group_router)
+app.include_router(course_router)
+app.include_router(equipment_router)
 
 
 @app.get("/")
