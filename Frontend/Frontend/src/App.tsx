@@ -9,6 +9,12 @@ import PedagogicalPage from './pages/Pedagogical.js'
 import AnomalyPage from './pages/AnomalyPage.js'
 import RagPage from './pages/RagPage.js'
 import UserPage from './pages/UserPage.js'
+import RoomsPage from './pages/CRUD/RoomsPage.js'
+import TrainersPage      from "./pages/CRUD/TrainersPage";
+import LearnerGroupsPage from "./pages/CRUD/LearnerGroupsPage";
+import CoursesPage       from "./pages/CRUD/CoursesPage";
+import EquipmentPage     from "./pages/CRUD/EquipmentPage";
+import CrudPage from './pages/CRUD/CrudPage.js'
 
 function App() {
   const navigate = useNavigate()
@@ -82,6 +88,12 @@ function App() {
         <Route path="/anomaly/*" element={<AnomalyPage />} />
         <Route path="/rag" element={<RagPage />} />
         <Route path="/user" element={<UserPage />} />
+        <Route path="/crud" element={<CrudPage />} />
+        <Route path="/admin/rooms"          element={<RoomsPage />} />
+        <Route path="/admin/trainers"       element={<TrainersPage />} />
+        <Route path="/admin/learner-groups" element={<LearnerGroupsPage />} />
+        <Route path="/admin/courses"        element={<CoursesPage />} />
+        <Route path="/admin/equipment"      element={<EquipmentPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>

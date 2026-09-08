@@ -1,45 +1,42 @@
 /// <reference types="vite/client" />
 // src/services/memoryService.ts
+// Updated: uses central apiFetch → X-User-ID auto-injected
+// Note: user_id is ALSO passed in query params for memory endpoints
+// (backend reads from query, not just header — both are set for safety)
 
-import type { Memory, MemorySummary, FeedbackRequest, MemoryType } from "../types/memory";
+import { apiGet, apiPost, apiDelete, apiFetch } from "./api";
 
-const BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "")
-           ?? "http://localhost:8000";
-
-async function call<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...options.headers },
-    ...options,
-  });
-  if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
-    try { const b = await res.json(); detail = b?.detail ?? detail; } catch {}
-    throw new Error(detail);
-  }
-  return res.json() as Promise<T>;
-}
+import type { Memory, MemorySummary, FeedbackRequest } from "../types/memory";
+import type { MemoryType } from "../types/rag";
 
 // GET /memories?user_id=...
-export const getMemories = (userId: string, type?: MemoryType, limit = 50): Promise<{
-  user_id: string; total: number; memories: Memory[];
-}> => call(`/memories?user_id=${userId}${type ? `&memory_type=${type}` : ""}&limit=${limit}`);
+export const getMemories = (
+  userId: string,
+  type?:  MemoryType,
+  limit = 50,
+): Promise<{ user_id: string; total: number; memories: Memory[] }> =>
+  apiGet(`/memories?user_id=${userId}${type ? `&memory_type=${type}` : ""}&limit=${limit}`);
 
 // GET /memories/summary?user_id=...
 export const getMemorySummary = (userId: string): Promise<MemorySummary> =>
-  call(`/memories/summary?user_id=${userId}`);
+  apiGet(`/memories/summary?user_id=${userId}`);
 
 // GET /memories/{id}
 export const getMemory = (memoryId: number): Promise<Memory> =>
-  call(`/memories/${memoryId}`);
+  apiGet(`/memories/${memoryId}`);
 
 // POST /memories/feedback
-export const submitFeedback = (body: FeedbackRequest): Promise<{ success: boolean; memory_id: string }> =>
-  call("/memories/feedback", { method: "POST", body: JSON.stringify(body) });
+export const submitFeedback = (
+  body: FeedbackRequest,
+): Promise<{ success: boolean; memory_id: string }> =>
+  apiPost("/memories/feedback", body);
 
 // DELETE /memories/{id}
 export const deleteMemory = (memoryId: string): Promise<{ success: boolean }> =>
-  call(`/memories/${memoryId}`, { method: "DELETE" });
+  apiDelete(`/memories/${memoryId}`);
 
 // DELETE /memories?user_id=...
-export const clearMemories = (userId: string): Promise<{ success: boolean; deleted_count: number }> =>
-  call(`/memories?user_id=${userId}`, { method: "DELETE" });
+export const clearMemories = (
+  userId: string,
+): Promise<{ success: boolean; deleted_count: number }> =>
+  apiDelete(`/memories?user_id=${userId}`);

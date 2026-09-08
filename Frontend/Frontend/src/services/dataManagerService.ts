@@ -1,107 +1,69 @@
+/// <reference types="vite/client" />
 // src/api/dataApi.ts
-// =====================================================
-// API Client pour le Data Manager (DataAgent)
-// Toutes les interactions avec /data/* endpoints
-// =====================================================
+// Updated: X-User-ID header injected on all requests via central apiFetch
+// uploadFile uses FormData (special case — Content-Type not set manually)
 
-import { 
-  UploadResponse, 
-  PreviewResponse, 
-  ValidateResponse, 
-  RejectResponse, 
-  UpdateRequest, 
-  UpdateResponse 
-} from '../types/dataManager';
+import { apiFetch, apiGet, apiPost, apiPut, BASE } from "../services/api";
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import type {
+  UploadResponse,
+  PreviewResponse,
+  ValidateResponse,
+  RejectResponse,
+  UpdateRequest,
+  UpdateResponse,
+} from "../types/dataManager";
 
-/**
- * Helper centralisé pour gérer les erreurs et le JSON
- */
-async function apiFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${url}`, {
-    ...options,
+// ── 1. Upload file (CSV / Excel / PDF) ────────────────────────────────────────
+
+export async function uploadFile(file: File): Promise<UploadResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  // Use apiFetch directly so X-User-ID header is injected
+  // Do NOT set Content-Type — browser sets it automatically for FormData
+  const res = await apiFetch("/data/upload", {
+    method: "POST",
+    body:   formData,
     headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
+      // Only X-User-ID will be set by apiFetch internals
+      // Content-Type intentionally omitted for FormData
     },
   });
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
-  }
-
-  return response.json();
+  return res.json() as Promise<UploadResponse>;
 }
 
-/**
- * 🔹 1. Upload a file (CSV, Excel or PDF)
- * POST /data/upload
- */
-export async function uploadFile(file: File): Promise<UploadResponse> {
-  const formData = new FormData();
-  formData.append('file', file);
+// ── 2. Preview extracted data ─────────────────────────────────────────────────
 
-  const response = await fetch(`${API_BASE_URL}/data/upload`, {
-    method: 'POST',
-    body: formData,
-    // Ne pas mettre Content-Type → le navigateur le gère automatiquement pour FormData
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.detail || `Upload failed: ${response.status}`);
-  }
-
-  return response.json();
-}
-
-/**
- * 🔹 2. Get preview of extracted data
- * GET /data/preview/{upload_id}
- */
 export async function getPreview(upload_id: string): Promise<PreviewResponse> {
-  return apiFetch<PreviewResponse>(`/data/preview/${upload_id}`);
+  return apiGet<PreviewResponse>(`/data/preview/${upload_id}`);
 }
 
-/**
- * 🔹 3. Validate data (HITL - Approve)
- * POST /data/validate/{upload_id}
- */
+// ── 3. Validate / approve (HITL) ──────────────────────────────────────────────
+// X-User-ID is critical here — backend uses it to tag every inserted DB record
+
 export async function validateData(upload_id: string): Promise<ValidateResponse> {
-  return apiFetch<ValidateResponse>(`/data/validate/${upload_id}`, {
-    method: 'POST',
-  });
+  return apiPost<ValidateResponse>(`/data/validate/${upload_id}`);
 }
 
-/**
- * 🔹 4. Reject data
- * POST /data/reject/{upload_id}
- */
+// ── 4. Reject data ────────────────────────────────────────────────────────────
+
 export async function rejectData(upload_id: string): Promise<RejectResponse> {
-  return apiFetch<RejectResponse>(`/data/reject/${upload_id}`, {
-    method: 'POST',
-  });
+  return apiPost<RejectResponse>(`/data/reject/${upload_id}`);
 }
 
-/**
- * 🔹 5. Update / Correct data manually
- * PUT /data/update/{upload_id}
- */
+// ── 5. Update / correct data ──────────────────────────────────────────────────
+
 export async function updateData(
-  upload_id: string, 
-  data: UpdateRequest['data']
+  upload_id: string,
+  data:      UpdateRequest["data"],
 ): Promise<UpdateResponse> {
-  return apiFetch<UpdateResponse>(`/data/update/${upload_id}`, {
-    method: 'PUT',
-    body: JSON.stringify({ data }),
-  });
+  return apiPut<UpdateResponse>(`/data/update/${upload_id}`, { data });
 }
 
-// =====================================================
-// Export groupé pour utilisation facile dans le hook
-// =====================================================
+// ── Grouped export ────────────────────────────────────────────────────────────
+
 export const dataApi = {
   uploadFile,
   getPreview,
