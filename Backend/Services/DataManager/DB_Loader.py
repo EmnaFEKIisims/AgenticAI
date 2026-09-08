@@ -1,184 +1,168 @@
 """
-agents/data_manager/loader/db_loader.py
-========================================
-Inserts validated, transformed records into the PostgreSQL database.
-Skips duplicates (checks by name/title before inserting).
-
-Input  : validated dict (output of data_validator.validate().valid)
-         OR raw list[dict] (from temp_storage, after HITL approval)
-Output : report dict { "courses": N, "trainers": N, ... }
+Services/DataManager/DB_Loader.py
+===================================
+Updated DB_Loader:
+  - Injects user_id into ALL records (rooms, trainers, groups, courses, equipment)
+  - Handles 'constraint' entity type:
+      * source="ISO_21001" → user_id=None (global rule, shared)
+      * source="user_defined" or anything else → user_id=current user (personal constraint)
 """
 
 from sqlalchemy.orm import Session
 
-from models.trainer     import Trainer
-from models.learner     import LearnerGroup
-from models.room        import Room
-from models.equipment   import Equipment
-from models.course      import Course
-from models.constraints import Constraint
+
+# ISO standards are global — not user-specific
+ISO_SOURCES = {"ISO_21001", "ISO 21001", "iso21001", "ISO_29993", "ISO 29993"}
 
 
-# =============================================================================
-#  Per-entity insert functions (all skip duplicates)
-# =============================================================================
-
-def _insert_course(fields: dict, db: Session) -> bool:
-    if db.query(Course).filter_by(title=fields["title"]).first():
-        print(f"  [Loader] Skipped duplicate course: '{fields['title']}'")
-        return False
-    db.add(Course(
-        title                  = fields["title"],
-        description            = fields.get("description"),
-        total_hours            = float(fields.get("total_hours", 0)),
-        session_duration       = int(fields.get("session_duration", 3)),
-        pedagogical_objectives = fields.get("pedagogical_objectives"),
-    ))
-    return True
-
-
-def _insert_trainer(fields: dict, db: Session) -> bool:
-    if db.query(Trainer).filter_by(name=fields["name"]).first():
-        print(f"  [Loader] Skipped duplicate trainer: '{fields['name']}'")
-        return False
-    db.add(Trainer(
-        name               = fields["name"],
-        email              = fields.get("email") or f"{fields['name'].lower().replace(' ','.')}@import.local",
-        specialization     = fields.get("specialization"),
-        availability_notes = fields.get("availability_notes"),
-    ))
-    return True
-
-
-def _insert_room(fields: dict, db: Session) -> bool:
-    if db.query(Room).filter_by(name=fields["name"]).first():
-        print(f"  [Loader] Skipped duplicate room: '{fields['name']}'")
-        return False
-    db.add(Room(
-        name      = fields["name"],
-        capacity  = int(fields.get("capacity", 1)),
-        room_type = fields.get("room_type"),
-    ))
-    return True
-
-
-def _insert_group(fields: dict, db: Session) -> bool:
-    if db.query(LearnerGroup).filter_by(name=fields["name"]).first():
-        print(f"  [Loader] Skipped duplicate group: '{fields['name']}'")
-        return False
-    db.add(LearnerGroup(
-        name  = fields["name"],
-        size  = int(fields.get("size", 1)),
-        level = fields.get("level"),
-    ))
-    return True
-
-
-def _insert_equipment(fields: dict, db: Session) -> bool:
-    if db.query(Equipment).filter_by(name=fields["name"]).first():
-        print(f"  [Loader] Skipped duplicate equipment: '{fields['name']}'")
-        return False
-    db.add(Equipment(
-        name           = fields["name"],
-        description    = fields.get("description"),
-        total_quantity = int(fields.get("total_quantity", 1)),
-    ))
-    return True
-
-
-def _insert_constraint(fields: dict, db: Session) -> bool:
-    cdata = fields.get("constraint_data", {})
-    if isinstance(cdata, str):
-        import json
-        try:    cdata = json.loads(cdata)
-        except: cdata = {"value": cdata}
-    db.add(Constraint(
-        planning_id      = 1,  # default planning_id
-        constraint_type  = fields.get("constraint_type", "other"),
-        constraint_data  = cdata,
-    ))
-    return True
-
-
-# =============================================================================
-#  Dispatcher
-# =============================================================================
-
-_INSERTERS = {
-    "courses":     _insert_course,
-    "trainers":    _insert_trainer,
-    "rooms":       _insert_room,
-    "groups":      _insert_group,
-    "equipments":  _insert_equipment,
-    "constraints": _insert_constraint,
-}
-
-
-# =============================================================================
-#  Main load function
-# =============================================================================
-
-def load_to_db(data: dict | list, db: Session) -> dict:
+def load_to_db(data: list[dict], db: Session, user_id: str = None) -> dict:
     """
-    Inserts records into PostgreSQL.
+    Inserts all records into their respective DB tables.
 
     Args:
-        data: either a grouped dict (from transformer/validator)
-              OR a flat list[dict] with an "entity_type" key (from temp_storage)
-        db:   SQLAlchemy session
+        data:    flat list of dicts with 'entity_type' key
+        db:      SQLAlchemy session
+        user_id: the owner of this data (None = global/ISO)
 
     Returns:
-        Report dict: { "courses": N, "trainers": N, ... }
+        dict with insertion counts per entity type
     """
-    report = {k: 0 for k in ["courses","trainers","rooms","groups","equipments","constraints","errors"]}
+    report = {
+        "trainers":       0,
+        "rooms":          0,
+        "learner_groups": 0,
+        "courses":        0,
+        "equipments":     0,
+        "constraints":    0,
+        "errors":         [],
+    }
 
-    # Normalize input: flat list -> grouped dict
-    if isinstance(data, list):
-        data = _flat_list_to_grouped(data)
+    for record in data:
+        entity_type = record.get("entity_type", "").lower().strip()
+        clean = {k: v for k, v in record.items() if not k.startswith("_") and k != "entity_type"}
 
-    for entity_key, records in data.items():
-        inserter = _INSERTERS.get(entity_key)
-        if not inserter:
-            continue  # skip "unknown"
+        try:
+            if entity_type in ("trainer", "trainers"):
+                _insert_trainer(clean, db, user_id)
+                report["trainers"] += 1
 
-        for record in records:
-            # Strip internal keys added by transformer/validator
-            fields = {k: v for k, v in record.items() if not k.startswith("_")}
-            try:
-                inserted = inserter(fields, db)
-                if inserted:
-                    report[entity_key] += 1
-            except Exception as e:
-                print(f"  [Loader] Error inserting {entity_key}: {e}")
-                report["errors"] += 1
+            elif entity_type in ("room", "rooms"):
+                _insert_room(clean, db, user_id)
+                report["rooms"] += 1
+
+            elif entity_type in ("learner_group", "learnergroup", "group", "learner_groups"):
+                _insert_learner_group(clean, db, user_id)
+                report["learner_groups"] += 1
+
+            elif entity_type in ("course", "courses"):
+                _insert_course(clean, db, user_id)
+                report["courses"] += 1
+
+            elif entity_type in ("equipment", "equipments"):
+                _insert_equipment(clean, db, user_id)
+                report["equipments"] += 1
+
+            elif entity_type in ("constraint", "constraints", "rule", "rules"):
+                # ── Key logic: ISO constraints are global, others are user-specific ──
+                source = clean.get("source", "user_defined")
+                constraint_user_id = None if source in ISO_SOURCES else user_id
+                _insert_constraint(clean, db, constraint_user_id)
+                report["constraints"] += 1
+
+            else:
+                print(f"  [DB_Loader] ⚠️  Unknown entity type: '{entity_type}' — skipped.")
+
+        except Exception as e:
+            err = f"[{entity_type}] {e} — record: {clean}"
+            report["errors"].append(err)
+            print(f"  [DB_Loader] ❌ {err}")
 
     try:
         db.commit()
-        total = sum(v for k, v in report.items() if k != "errors")
-        print(f"  [Loader] Committed {total} record(s) to DB. Errors: {report['errors']}")
+        print(f"  [DB_Loader] ✅ Committed: {report}")
     except Exception as e:
         db.rollback()
-        raise RuntimeError(f"DB commit failed: {e}")
+        report["errors"].append(f"Commit failed: {e}")
+        print(f"  [DB_Loader] ❌ Commit failed: {e}")
 
     return report
 
 
 # =============================================================================
-#  Helper — normalize flat list to grouped dict
+#  Individual inserters
 # =============================================================================
 
-def _flat_list_to_grouped(records: list[dict]) -> dict:
+def _insert_trainer(data: dict, db: Session, user_id: str):
+    from models.trainer import Trainer
+    t = Trainer(
+        name               = data.get("name", ""),
+        email              = data.get("email", ""),
+        specialization     = data.get("specialization"),
+        availability_notes = data.get("availability_notes"),
+        user_id            = user_id,
+    )
+    db.add(t)
+
+
+def _insert_room(data: dict, db: Session, user_id: str):
+    from models.room import Room
+    r = Room(
+        name      = data.get("name", ""),
+        capacity  = int(data.get("capacity", 1)),
+        room_type = data.get("room_type"),
+        user_id   = user_id,
+    )
+    db.add(r)
+
+
+def _insert_learner_group(data: dict, db: Session, user_id: str):
+    from models.learner import LearnerGroup
+    g = LearnerGroup(
+        name    = data.get("name", ""),
+        size    = int(data.get("size", 1)),
+        level   = data.get("level"),
+        user_id = user_id,
+    )
+    db.add(g)
+
+
+def _insert_course(data: dict, db: Session, user_id: str):
+    from models.course import Course
+    c = Course(
+        title                  = data.get("title", data.get("name", "")),
+        description            = data.get("description"),
+        total_hours            = float(data.get("total_hours", 1)),
+        session_duration       = int(data.get("session_duration", 180)),
+        pedagogical_objectives = data.get("pedagogical_objectives"),
+        user_id                = user_id,
+    )
+    db.add(c)
+
+
+def _insert_equipment(data: dict, db: Session, user_id: str):
+    from models.equipment import Equipment
+    e = Equipment(
+        name           = data.get("name", ""),
+        description    = data.get("description"),
+        total_quantity = int(data.get("total_quantity", data.get("quantity", 1))),
+        user_id        = user_id,
+    )
+    db.add(e)
+
+
+def _insert_constraint(data: dict, db: Session, user_id: str | None):
     """
-    Converts a flat list like:
-      [{"entity_type": "course", "title": "Python", ...}, ...]
-    into:
-      {"courses": [{"title": "Python", ...}], ...}
+    Inserts a constraint record.
+    user_id=None  → global ISO rule (visible to all users)
+    user_id=uuid  → user-specific constraint (only visible to that user)
     """
-    grouped = {k: [] for k in ["courses","trainers","rooms","groups","equipments","constraints"]}
-    for record in records:
-        etype = record.get("entity_type", "unknown")
-        key   = etype + "s"
-        if key in grouped:
-            fields = {k: v for k, v in record.items() if k != "entity_type"}
-            grouped[key].append(fields)
-    return grouped
+    from models.constraints import Constraint   # adapt to your actual model
+    c = Constraint(
+        constraint_type = data.get("constraint_type", data.get("type", "custom")),
+        description     = data.get("description", data.get("rule", "")),
+        value           = data.get("value"),
+        source          = data.get("source", "user_defined"),
+        is_active       = True,
+        user_id         = user_id,   # None for ISO, uuid for user-defined
+    )
+    db.add(c)

@@ -34,6 +34,11 @@ from api.NotificationRouter  import router as notification_router
 from api.MemoryRouter import router as memory_router
 from api.RAGRouter import router as rag_router
 from api.UserRouter import router as user_router
+from api.RoomRouter         import router as room_router
+from api.TrainerRouter      import router as trainer_router
+from api.LearnerGroupRouter import router as learner_group_router
+from api.CourseRouter      import router as course_router
+from api.EquipmentRouter    import router as equipment_router
 
 
 def get_db():
@@ -175,6 +180,11 @@ app.include_router(notification_router)
 app.include_router(memory_router)
 app.include_router(user_router)
 app.include_router(rag_router)
+app.include_router(room_router)
+app.include_router(trainer_router)
+app.include_router(learner_group_router)
+app.include_router(course_router)
+app.include_router(equipment_router)
 
 
 @app.get("/")

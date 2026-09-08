@@ -26,6 +26,6 @@ class Equipment(Base):
     name = Column(String, nullable=False)
     description = Column(String)
     total_quantity = Column(Integer, default=1)
-
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
     courses = relationship("Course", secondary=course_equipment, back_populates="required_equipments")
     slots = relationship("ScheduleSlot", secondary=schedule_equipment, back_populates="allocated_equipments")
