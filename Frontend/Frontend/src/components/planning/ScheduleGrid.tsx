@@ -2,6 +2,15 @@
 // Weekly timetable with drag & drop support.
 // Each session card = DraggableScheduleSlot
 // Each empty cell  = DropZone
+//
+// ← FIXED: toISO() used a hardcoded referenceMonday = "2025-09-01" fallback.
+//   Every drop-target date was computed from that fake anchor instead of the
+//   planning's real start date, so a session generated in week X of 2026
+//   would compute a drop target a full YEAR off (confirmed against the
+//   PATCH /planning/session/211/move log: dragging to "week 0, Friday"
+//   from the hardcoded 2025-09-01 anchor produces exactly "2025-09-05",
+//   which is what was actually saved). Now the reference Monday is derived
+//   from a real session's actual start_time in the current schedule.
 
 import { useState, useMemo } from "react";
 import type { SessionSlotOut } from "../../types/planningRegeneration";
@@ -18,14 +27,52 @@ function extractWeek(suggestedDay: string): number {
 function extractDay(suggestedDay: string): string {
   return suggestedDay?.split("—")[1]?.trim() ?? suggestedDay;
 }
-// Converts "Week 1 — Monday" + "08:00 → 11:00" → ISO start datetime
-function toISO(suggestedDay: string, timeSlot: string, referenceMonday = "2025-09-01"): [string, string] {
+
+/** Zero-pad a date component. */
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/**
+ * ← ADDED: derive the real "Week 1 Monday" from a session that already has
+ * a genuine ISO start_time, instead of trusting a hardcoded date. Works
+ * back from that session's (week, day) label to what Week 1 Monday must
+ * have been.
+ */
+function deriveReferenceMonday(sessions: SessionSlotOut[]): Date | null {
+  for (const s of sessions) {
+    if (!s.start_time) continue;
+    const start = new Date(s.start_time);
+    if (isNaN(start.getTime())) continue;
+
+    const week   = extractWeek(s.suggested_day) - 1;
+    const dayIdx = DAYS.indexOf(extractDay(s.suggested_day));
+    if (dayIdx === -1) continue;
+
+    const monday = new Date(start);
+    monday.setDate(monday.getDate() - (week * 7 + dayIdx));
+    monday.setHours(0, 0, 0, 0);
+    return monday;
+  }
+  return null;
+}
+
+// Converts "Week 1 — Monday" + "08:00 → 11:00" → ISO start/end datetime,
+// anchored on the schedule's REAL reference Monday (not a hardcoded date).
+// ← FIXED: also stopped using toISOString().slice(0, 10) to build the date
+//   part — that converts to UTC first, which can silently shift the date
+//   by one day for timezones ahead of UTC (e.g. UTC+1). Now built from
+//   local date components instead.
+function toISO(suggestedDay: string, timeSlot: string, referenceMonday: Date): [string, string] {
   const week    = extractWeek(suggestedDay) - 1;
   const dayIdx  = DAYS.indexOf(extractDay(suggestedDay));
   const [s, e]  = timeSlot.split("→").map(t => t.trim());
-  const base    = new Date(referenceMonday);
+
+  const base = new Date(referenceMonday);
   base.setDate(base.getDate() + week * 7 + dayIdx);
-  const fmt = (t: string) => `${base.toISOString().slice(0, 10)}T${t}:00`;
+
+  const dateStr = `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(base.getDate())}`;
+  const fmt = (t: string) => `${dateStr}T${t}:00`;
   return [fmt(s), fmt(e)];
 }
 
@@ -47,6 +94,22 @@ export default function ScheduleGrid({
 }: ScheduleGridProps) {
 
   const [overCell, setOverCell] = useState<string | null>(null);
+
+  // ← ADDED: the real reference Monday for this schedule, derived from
+  //   actual session data instead of a hardcoded fallback.
+  const referenceMonday = useMemo(() => {
+    return deriveReferenceMonday(sessions) ?? (() => {
+      // Only reached if NO session in the schedule has a valid start_time
+      // (shouldn't happen with the backend/type fixes already in place).
+      // Falling back to "today" rather than a fixed stale date at least
+      // keeps drops in the current year instead of silently jumping a
+      // year back.
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - d.getDay() + 1); // this week's Monday
+      return d;
+    })();
+  }, [sessions]);
 
   // Time slots and week sessions
   const allTimeSlots = useMemo(() =>
@@ -127,7 +190,7 @@ export default function ScheduleGrid({
                   const session  = grid.get(`${day}|${slot}`);
                   const cellKey  = `${day}|${slot}`;
                   const isOver   = overCell === cellKey;
-                  const [s, e]   = toISO(`Week ${currentWeek} — ${day}`, slot);
+                  const [s, e]   = toISO(`Week ${currentWeek} — ${day}`, slot, referenceMonday);
 
                   return (
                     <td key={slot} className={`px-2 py-2 transition-colors ${isOver ? "bg-sky-50" : ""}`}>

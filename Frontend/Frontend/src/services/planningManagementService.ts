@@ -1,5 +1,20 @@
 // services/planningManagementService.ts
 // Single service for HITL + Regeneration + Drag & Drop + Impact Analysis
+//
+// ← FIXED: validatePlanning/rejectPlanning were sending planning_group_id
+//   inside the JSON body. The backend (PlanningRouter.py) takes it as a
+//   PATH parameter (/planning/{planning_group_id}/validate), not a body
+//   field — only { validation_notes } / { reason } belong in the body.
+//   FastAPI silently dropped the extra field, so nothing broke at runtime,
+//   but it no longer matched the corrected ValidateRequest/RejectRequest
+//   types (types/planningValidation.ts) and was misleading about what the
+//   backend actually expects.
+//
+// ⚠️ getPlanningStatus() and getMoveHistory() call endpoints
+//   (/planning/{id}/status, /planning/session/{id}/history) that do not
+//   exist in the PlanningRouter.py shared in this conversation. Left
+//   untouched since they may live in a router file not yet reviewed —
+//   verify these are backed by a real endpoint before relying on them.
 
 import type { ValidateRequest, RejectRequest, ValidationResponse, PlanningStatusResponse } from "../types/planningValidation";
 import type { RegenerateRequest, RegenerateResponse }                                       from "../types/planningRegeneration";
@@ -31,9 +46,10 @@ export async function validatePlanning(
   planningGroupId: string,
   notes?: string,
 ): Promise<ValidationResponse> {
+  const body: ValidateRequest = { validation_notes: notes };
   return call<ValidationResponse>(`/planning/${planningGroupId}/validate`, {
     method: "POST",
-    body:   JSON.stringify({ planning_group_id: planningGroupId, validation_notes: notes }),
+    body:   JSON.stringify(body),
   });
 }
 
@@ -46,15 +62,18 @@ export async function rejectPlanning(
   planningGroupId: string,
   reason?: string,
 ): Promise<ValidationResponse> {
+  const body: RejectRequest = { reason };
   return call<ValidationResponse>(`/planning/${planningGroupId}/reject`, {
     method: "POST",
-    body:   JSON.stringify({ planning_group_id: planningGroupId, reason }),
+    body:   JSON.stringify(body),
   });
 }
 
 
 // =============================================================================
 //  HITL — Status
+//  ⚠️ No matching GET /planning/{id}/status endpoint found in the router
+//     shared so far. Verify before use.
 // =============================================================================
 
 export async function getPlanningStatus(planningGroupId: string): Promise<PlanningStatusResponse> {
@@ -106,6 +125,8 @@ export async function moveSession(
 
 // =============================================================================
 //  Move History
+//  ⚠️ No matching GET /planning/session/{id}/history endpoint found in the
+//     router shared so far. Verify before use.
 // =============================================================================
 
 export async function getMoveHistory(slotId: number): Promise<{ slot_id: number; history: unknown[] }> {

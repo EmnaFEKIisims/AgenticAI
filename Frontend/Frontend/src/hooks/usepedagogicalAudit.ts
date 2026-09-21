@@ -7,7 +7,7 @@
 //
 // PedagogicalAuditPage calls this hook — zero API logic in the page.
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import type {
   PedagogicalAuditState,
   AuditReport,
@@ -58,6 +58,17 @@ interface UsePedagogicalAuditReturn {
 export function usePedagogicalAudit(): UsePedagogicalAuditReturn {
   const [state, setState] = useState<PedagogicalAuditState>(INITIAL);
 
+  // ← ADDED: monotonically increasing id for the "current" in-flight
+  //   request. Confirmed root cause of the 66 → 63.4 flip-flop reported
+  //   in production: two runAudit() calls fired close together (one with
+  //   fresh schedule data, one with stale data), and whichever response
+  //   came back LAST simply overwrote `state` — even when it was the
+  //   stale one. This ref lets each in-flight call check, right before
+  //   writing state, whether it is still the most recent call that was
+  //   started; a call that's been superseded by a newer one silently
+  //   drops its result instead of clobbering the fresher state.
+  const requestIdRef = useRef(0);
+
   // ── Derived values ──────────────────────────────────────────────────────────
   const isLoading      = state.status === "loading";
   const hasReport      = state.report !== null;
@@ -68,11 +79,17 @@ export function usePedagogicalAudit(): UsePedagogicalAuditReturn {
 
   // ── runAudit — POST /audit ──────────────────────────────────────────────────
   const runAudit = useCallback(async (request: AuditRequest) => {
+    const myRequestId = ++requestIdRef.current;
     setState({ status: "loading", report: null, error: null });
     try {
       const report = await auditPlanning(request);
+      // ← A newer runAudit()/fetchReport() call started while this one was
+      //   in flight — that call owns the state now, so this stale result
+      //   is discarded instead of overwriting whatever it produced.
+      if (myRequestId !== requestIdRef.current) return;
       setState({ status: "success", report, error: null });
     } catch (err) {
+      if (myRequestId !== requestIdRef.current) return;
       setState({
         status: "error",
         report: null,
@@ -83,11 +100,14 @@ export function usePedagogicalAudit(): UsePedagogicalAuditReturn {
 
   // ── fetchReport — GET /audit/report/{id} ────────────────────────────────────
   const fetchReport = useCallback(async (planningId: number) => {
+    const myRequestId = ++requestIdRef.current;
     setState(s => ({ ...s, status: "loading", error: null }));
     try {
       const report = await getAuditReport(planningId);
+      if (myRequestId !== requestIdRef.current) return;
       setState({ status: "success", report, error: null });
     } catch (err) {
+      if (myRequestId !== requestIdRef.current) return;
       setState(s => ({
         ...s,
         status: "error",
@@ -97,11 +117,18 @@ export function usePedagogicalAudit(): UsePedagogicalAuditReturn {
   }, []);
 
   const hydrateReport = useCallback((report: AuditReport) => {
+    // Hydrating from cache also "claims" the request slot, so a slow
+    // in-flight runAudit from before this hydration can't later overwrite
+    // it with a stale result either.
+    requestIdRef.current += 1;
     setState({ status: "success", report, error: null });
   }, []);
 
   // ── reset ──────────────────────────────────────────────────────────────────
-  const reset = useCallback(() => setState(INITIAL), []);
+  const reset = useCallback(() => {
+    requestIdRef.current += 1;
+    setState(INITIAL);
+  }, []);
 
   return {
     status:  state.status,
