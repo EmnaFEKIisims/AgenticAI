@@ -7,9 +7,9 @@ Called by PlanningAgent instead of the old greedy _generate_schedule().
 
 Planner
   │
-  ├── Prepares data (slots, sessions, forbidden slots)
+  ├── Prepares data (WEEKLY slots, course x group PAIRS, forbidden slots)
   │
-  ├── optimization/variables.py   → CP-SAT IntVar per session
+  ├── optimization/variables.py   → CP-SAT IntVar per PAIR (not per session)
   │
   ├── optimization/constraints.py → Hard constraints
   │
@@ -17,9 +17,29 @@ Planner
   │
   ├── optimization/solver.py      → CP-SAT solve (30s time limit)
   │
-  └── optimization/solution_mapper.py → OR-Tools ints → schedule list[dict]
+  └── optimization/solution_mapper.py → OR-Tools solution → week-expanded schedule list[dict]
 
 If OR-Tools finds no solution → returns None → PlanningAgent falls back to greedy.
+
+← CHANGED (fix for "OR-Tools Status: UNKNOWN / always falls back to greedy"):
+  This used to build one CP-SAT decision (slot, trainer, room) PER
+  SESSION -- 240 of them in this project, one for every week-occurrence
+  of every course x group combo, over the FULL 20-week slot list (300
+  slots). That's the wrong shape for this problem: the actual planning
+  model is "pick ONE fixed weekly slot per (course x group) PAIR, then
+  repeat it every week" (see agents/planning_agent.py,
+  _generate_schedule_recurring -- this is exactly what the greedy
+  fallback already does, with only 66 pairs). Solving per-session made
+  the CP-SAT search space ~3.6x too big and added thousands of useless
+  constraints between sessions that were never meant to differ (same
+  pair, different week) -- so the solver hit its 30s time limit without
+  even finding a first feasible solution (status UNKNOWN).
+
+  Now the CP-SAT model decides only the 66 pairs' weekly slots
+  (n_weekly_slots ~= 15, not 300), matching the greedy engine's problem
+  size exactly, then the solution is expanded into individual dated
+  sessions in optimization/solution_mapper.py. Same guarantees, same
+  output shape, orders of magnitude smaller search space.
 """
 
 import math
@@ -27,7 +47,7 @@ from datetime import datetime, timedelta
 
 from ortools.sat.python import cp_model
 
-from Services.PlanningAgent.optimization.variables      import create_session_variables
+from Services.PlanningAgent.optimization.variables      import create_pair_variables
 from Services.PlanningAgent.optimization.constraints    import (
     add_group_non_overlap,
     add_resource_non_overlap,
@@ -91,19 +111,20 @@ class Planner:
             days_to_mon    = (7 - today.weekday()) % 7 or 7
             reference_date = today + timedelta(days=days_to_mon)
 
-        # ── Step 1: Pre-compute time slots ────────────────────────────────────
-        slots = self._build_slots(constraints, reference_date)
-        if not slots:
-            print("  [Planner] ❌ No valid time slots.")
+        # ── Step 1: Pre-compute WEEKLY time slots (one week only) ─────────────
+        weekly_slots = self._build_weekly_slots(constraints)
+        if not weekly_slots:
+            print("  [Planner] ❌ No valid weekly slots.")
             return None
-        print(f"  [Planner] {len(slots)} time slots available.")
+        print(f"  [Planner] {len(weekly_slots)} weekly slots available.")
 
-        # ── Step 2: Build session tasks ───────────────────────────────────────
-        sessions = self._build_sessions(data, constraints)
-        if not sessions:
-            print("  [Planner] ❌ No sessions to schedule.")
+        # ── Step 2: Build (course x group) pairs ──────────────────────────────
+        pairs = self._build_pairs(data, constraints)
+        if not pairs:
+            print("  [Planner] ❌ No pairs to schedule.")
             return None
-        print(f"  [Planner] {len(sessions)} sessions to schedule.")
+        print(f"  [Planner] {len(pairs)} pairs to schedule "
+              f"({sum(p['nb_sessions'] for p in pairs)} sessions once expanded).")
 
         trainers = data.get("trainers", [])
         rooms    = data.get("rooms",    [])
@@ -111,22 +132,22 @@ class Planner:
             print("  [Planner] ❌ No trainers or rooms available.")
             return None
 
-        # ── Step 3: Compute forbidden slots ───────────────────────────────────
-        forbidden_global  = self._global_forbidden_slots(constraints, slots)
-        forbidden_trainer = self._trainer_forbidden_slots(constraints, slots, trainers)
+        # ── Step 3: Compute forbidden WEEKLY slots ────────────────────────────
+        forbidden_global  = self._global_forbidden_slots(constraints, weekly_slots)
+        forbidden_trainer = self._trainer_forbidden_slots(constraints, weekly_slots, trainers)
 
         # ── Step 4: Build CP-SAT model ────────────────────────────────────────
         model     = cp_model.CpModel()
-        sess_vars = create_session_variables(model, sessions, len(slots), trainers, rooms)
+        pair_vars = create_pair_variables(model, pairs, len(weekly_slots), trainers, rooms)
 
         # ── Step 5: Add constraints ───────────────────────────────────────────
-        add_group_non_overlap(model, sess_vars, sessions)
-        add_resource_non_overlap(model, sess_vars)
-        add_forbidden_slots(model, sess_vars, forbidden_global)
-        add_trainer_forbidden_slots(model, sess_vars, forbidden_trainer)
+        add_group_non_overlap(model, pair_vars, pairs)
+        add_resource_non_overlap(model, pair_vars)
+        add_forbidden_slots(model, pair_vars, forbidden_global)
+        add_trainer_forbidden_slots(model, pair_vars, forbidden_trainer)
 
         # ── Step 6: Add objective ─────────────────────────────────────────────
-        build_objective(model, sess_vars, sessions, trainers, len(slots))
+        build_objective(model, pair_vars, pairs, trainers, len(weekly_slots))
 
         # ── Step 7: Solve ─────────────────────────────────────────────────────
         solver, status = solve(model, self.time_limit)
@@ -135,19 +156,25 @@ class Planner:
             print(f"  [Planner] OR-Tools could not find a solution → falling back to greedy.")
             return None
 
-        # ── Step 8: Map solution to schedule dicts ───────────────────────────
-        schedule = build_schedule(solver, sess_vars, sessions, slots, trainers, rooms)
-        print(f"  [Planner] ✅ {len(schedule)} session(s) scheduled by OR-Tools.")
+        # ── Step 8: Expand solution into a week-by-week schedule ─────────────
+        schedule = build_schedule(
+            solver, pair_vars, pairs, weekly_slots, trainers, rooms, reference_date,
+        )
+        print(f"  [Planner] ✅ {len(schedule)} session(s) scheduled by OR-Tools "
+              f"({len(pairs)} pairs).")
         return schedule
 
     # ==========================================================================
     #  DATA PREPARATION
     # ==========================================================================
 
-    def _build_slots(self, constraints: dict, reference_date: datetime) -> list[dict]:
+    def _build_weekly_slots(self, constraints: dict) -> list[dict]:
         """
-        Pre-computes all valid (week, day, slot_idx) combinations.
-        Returns a list of slot dicts indexed 0..N-1 — used as IntVar domain.
+        Pre-computes all valid (day, slot_idx) combinations for A SINGLE WEEK.
+        Returns a list of weekly slot dicts indexed 0..N-1 -- used as the
+        IntVar domain for each pair's slot_var. The actual per-week dates
+        are computed later, in optimization/solution_mapper.py, once a
+        pair's weekly slot has been decided by the solver.
         """
         duration_min   = constraints.get("session_duration_override") or DEFAULT_SESSION_DURATION_MINUTES
         sessions_count = constraints.get("sessions_per_day")          or DEFAULT_SESSIONS_PER_DAY
@@ -176,69 +203,62 @@ class Planner:
             if lunch_after and (i + 1) == lunch_after:
                 cursor += timedelta(minutes=lunch_dur)
 
-        slots = []
-        idx   = 0
-        for week in range(MAX_WEEKS):
-            for day in allowed_days:
-                day_idx    = DAY_ORDER.index(day)
-                base_date  = reference_date + timedelta(weeks=week, days=day_idx)
-                for si, (start, end) in enumerate(time_slots):
-                    sh, sm = map(int, start.split(":"))
-                    eh, em = map(int, end.split(":"))
-                    slots.append({
-                        "index":    idx,
-                        "week":     week,
-                        "day":      day,
-                        "day_idx":  day_idx,
-                        "slot_idx": si,
-                        "start":    start,
-                        "end":      end,
-                        "start_dt": base_date.replace(hour=sh, minute=sm, second=0, microsecond=0),
-                        "end_dt":   base_date.replace(hour=eh, minute=em, second=0, microsecond=0),
-                    })
-                    idx += 1
-        return slots
+        weekly_slots = []
+        idx = 0
+        for day in allowed_days:
+            day_idx = DAY_ORDER.index(day)
+            for si, (start, end) in enumerate(time_slots):
+                weekly_slots.append({
+                    "index":    idx,
+                    "day":      day,
+                    "day_idx":  day_idx,
+                    "slot_idx": si,
+                    "start":    start,
+                    "end":      end,
+                })
+                idx += 1
+        return weekly_slots
 
-    def _build_sessions(self, data: dict, constraints: dict) -> list[dict]:
+    def _build_pairs(self, data: dict, constraints: dict) -> list[dict]:
         """
-        Expands (course × group) pairs into individual session tasks.
+        Builds the list of (course x group) pairs to schedule -- ONE entry
+        per pair (not per session/week). Each pair carries nb_sessions
+        (how many weeks it repeats), expanded later during solution mapping.
         """
         duration_min = constraints.get("session_duration_override") or DEFAULT_SESSION_DURATION_MINUTES
-        sessions     = []
+        pairs        = []
 
         for course in data.get("courses", []):
-            course_dur = constraints.get("session_duration_override") or int(course.get("session_duration", 3) * 60)
+            course_dur = duration_min or int(course.get("session_duration", 3) * 60)
             nb         = math.ceil((course["total_hours"] * 60) / course_dur)
 
             for group in data.get("groups", []):
-                for sn in range(1, nb + 1):
-                    sessions.append({
-                        "course_id":    course["id"],
-                        "course_title": course["title"],
-                        "group_id":     group["id"],
-                        "group_name":   group["name"],
-                        "group_size":   group["size"],
-                        "session_number": sn,
-                        "nb_sessions":    nb,
-                    })
-        return sessions
+                pairs.append({
+                    "course_id":      course["id"],
+                    "course_title":   course["title"],
+                    "group_id":       group["id"],
+                    "group_name":     group["name"],
+                    "group_size":     group["size"],
+                    "nb_sessions":    nb,
+                })
+        return pairs
 
-    def _global_forbidden_slots(self, constraints: dict, slots: list[dict]) -> list[int]:
-        """Returns slot indices that fall on forbidden days."""
+    def _global_forbidden_slots(self, constraints: dict, weekly_slots: list[dict]) -> list[int]:
+        """Returns weekly slot indices that fall on forbidden days."""
         forbidden = [d.lower() for d in constraints.get("forbidden_days", [])]
         return [
-            s["index"] for s in slots
+            s["index"] for s in weekly_slots
             if s["day"].lower() in forbidden or DAY_FR.get(s["day"], "").lower() in forbidden
         ]
 
     def _trainer_forbidden_slots(
         self,
-        constraints: dict,
-        slots:       list[dict],
-        trainers:    list[dict],
+        constraints:  dict,
+        weekly_slots: list[dict],
+        trainers:     list[dict],
     ) -> dict[int, list[int]]:
         """
-        For each trainer, returns the list of forbidden slot indices
+        For each trainer, returns the list of forbidden WEEKLY slot indices
         based on their availability constraints.
         """
         trainer_avail = {
@@ -267,7 +287,7 @@ class Planner:
             if day_mentioned:
                 # Forbidden in slots whose day is not mentioned in availability
                 forbidden[t_idx] = [
-                    s["index"] for s in slots
+                    s["index"] for s in weekly_slots
                     if s["day"].lower() not in matched
                     and DAY_FR.get(s["day"], "").lower() not in matched
                 ]

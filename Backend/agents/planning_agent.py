@@ -525,7 +525,7 @@ class PlanningAgent:
 
         # Try OR-Tools first
         try:
-            from agents.planner import Planner
+            from Services.PlanningAgent.optimization.planner import Planner
             schedule = Planner(time_limit_seconds=30).solve(data, final)
             if schedule:
                 engine = "ortools"
