@@ -2,6 +2,13 @@
 // ======================
 // Pure display helpers for the Anomaly Agent UI.
 // No API calls, no state — only formatting.
+//
+// ADDED in this pass: category grouping helpers (categoryOf, categoryLabel,
+// categoryIcon, groupByCategory). The DB doesn't persist a "category" column,
+// so it's derived client-side from anomaly_type — mirrors the backend
+// classifier's CLASSIFICATION_MAP groups (conflict / overload / compliance /
+// capacity / schedule). Used by the redesigned AnomalyList to replace the
+// flat "wall of cards" with collapsible sections.
 
 import type { AnomalySeverity, AnomalyStatus, Anomaly } from "../types/anomaly";
 
@@ -69,6 +76,80 @@ export function anomalyTypeLabel(type: string): string {
     other:                      "Other",
   };
   return labels[type] ?? type.replace(/_/g, " ");
+}
+
+// =============================================================================
+//  CATEGORY GROUPING (new)
+// =============================================================================
+
+export type AnomalyCategory = "conflict" | "overload" | "compliance" | "capacity" | "schedule" | "other";
+
+const CATEGORY_MAP: Record<string, AnomalyCategory> = {
+  trainer_conflict:           "conflict",
+  room_conflict:              "conflict",
+  learner_conflict:           "conflict",
+  equipment_conflict:         "conflict",
+  teacher_overload:           "overload",
+  workload_exceeded:          "overload",
+  wrong_progression:          "compliance",
+  practice_before_theory:     "compliance",
+  prerequisite_violated:      "compliance",
+  evaluation_misplaced:       "compliance",
+  room_capacity_insufficient: "capacity",
+  wrong_room_type:            "capacity",
+  insufficient_break:         "schedule",
+};
+
+export function categoryOf(type: string): AnomalyCategory {
+  return CATEGORY_MAP[type] ?? "other";
+}
+
+export function categoryLabel(category: AnomalyCategory): string {
+  return {
+    conflict:   "Conflicts",
+    overload:   "Overload",
+    compliance: "Pedagogical Compliance",
+    capacity:   "Room & Capacity",
+    schedule:   "Scheduling",
+    other:      "Other",
+  }[category];
+}
+
+export function categoryIcon(category: AnomalyCategory): string {
+  return {
+    conflict:   "⚡",
+    overload:   "📈",
+    compliance: "🎓",
+    capacity:   "🏫",
+    schedule:   "🕒",
+    other:      "❓",
+  }[category];
+}
+
+/**
+ * Groups anomalies by category, sorted so that categories containing an
+ * open HIGH-severity anomaly come first — the list should auto-surface
+ * what matters most instead of burying it in insertion order.
+ */
+export function groupByCategory(anomalies: Anomaly[]): { category: AnomalyCategory; items: Anomaly[] }[] {
+  const groups = new Map<AnomalyCategory, Anomaly[]>();
+  for (const a of anomalies) {
+    const cat = categoryOf(a.anomaly_type);
+    if (!groups.has(cat)) groups.set(cat, []);
+    groups.get(cat)!.push(a);
+  }
+
+  const hasOpenHigh = (items: Anomaly[]) =>
+    items.some((a) => a.severity === "high" && a.status === "open");
+
+  return Array.from(groups.entries())
+    .map(([category, items]) => ({ category, items }))
+    .sort((a, b) => {
+      const aCritical = hasOpenHigh(a.items) ? 1 : 0;
+      const bCritical = hasOpenHigh(b.items) ? 1 : 0;
+      if (aCritical !== bCritical) return bCritical - aCritical;
+      return b.items.length - a.items.length;
+    });
 }
 
 // =============================================================================

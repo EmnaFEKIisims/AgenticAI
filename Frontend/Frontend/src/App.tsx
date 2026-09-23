@@ -9,6 +9,7 @@ import PedagogicalPage from './pages/Pedagogical.js'
 import AnomalyPage from './pages/AnomalyPage.js'
 import RagPage from './pages/RagPage.js'
 import UserPage from './pages/UserPage.js'
+import NotificationsPage from './pages/NotificationsPage.js'
 import RoomsPage from './pages/CRUD/RoomsPage.js'
 import TrainersPage      from "./pages/CRUD/TrainersPage";
 import LearnerGroupsPage from "./pages/CRUD/LearnerGroupsPage";
@@ -76,6 +77,7 @@ function App() {
         >
           <UserRound className="theme-icon" strokeWidth={2.25} aria-hidden="true" />
         </button>
+
       </div>
 
       <Routes>
@@ -88,6 +90,7 @@ function App() {
         <Route path="/anomaly/*" element={<AnomalyPage />} />
         <Route path="/rag" element={<RagPage />} />
         <Route path="/user" element={<UserPage />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/crud" element={<CrudPage />} />
         <Route path="/admin/rooms"          element={<RoomsPage />} />
         <Route path="/admin/trainers"       element={<TrainersPage />} />

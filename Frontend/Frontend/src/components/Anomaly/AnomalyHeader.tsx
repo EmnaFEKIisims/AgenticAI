@@ -1,5 +1,8 @@
 // components/anomaly/AnomalyHeader.tsx
-// No input field, no button — page auto-loads on mount.
+// =======================================
+// Light polish only: critical banner now uses the same rose/emerald language
+// as the rest of the redesign, and shows a quiet "all clear" state instead
+// of nothing when there's nothing open.
 
 interface AnomalyHeaderProps {
   totalAnomalies: number;
@@ -11,51 +14,39 @@ interface AnomalyHeaderProps {
 export default function AnomalyHeader({
   totalAnomalies, openCount, hasCritical, isLoading,
 }: AnomalyHeaderProps) {
-  return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+  if (isLoading) return null;
 
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">🔍</span>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900">Anomaly Agent</h1>
-            <p className="text-sm text-slate-500">
-              Detect · Classify · Resolve
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {isLoading && (
-            <span className="text-xs text-slate-400 animate-pulse">
-              Loading anomalies…
-            </span>
-          )}
-
-          {!isLoading && totalAnomalies > 0 && (
-            <>
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-600">
-                {totalAnomalies} total
-              </span>
-              <span className={`rounded-full border px-4 py-1 text-xs font-semibold ${
-                hasCritical
-                  ? "border-rose-200 bg-rose-50 text-rose-700"
-                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
-              }`}>
-                {hasCritical
-                  ? `🔴 ${openCount} open — action required`
-                  : "✅ No critical anomalies"}
-              </span>
-            </>
-          )}
-
-          {!isLoading && totalAnomalies === 0 && (
-            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-4 py-1 text-xs font-semibold text-emerald-700">
-              ✅ No anomalies detected
-            </span>
-          )}
+  if (hasCritical) {
+    return (
+      <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-3.5 flex items-center gap-3">
+        <span className="text-xl">🚨</span>
+        <div>
+          <p className="text-sm font-bold text-rose-800">Critical anomalies detected</p>
+          <p className="text-xs text-rose-600">
+            {openCount} open · {totalAnomalies} total — review the flagged items below.
+          </p>
         </div>
       </div>
+    );
+  }
+
+  if (openCount > 0) {
+    return (
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3.5 flex items-center gap-3">
+        <span className="text-xl">⚠️</span>
+        <p className="text-sm font-semibold text-amber-800">
+          {openCount} open anomal{openCount === 1 ? "y" : "ies"} to review — none critical.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3.5 flex items-center gap-3">
+      <span className="text-xl">✅</span>
+      <p className="text-sm font-semibold text-emerald-800">
+        All clear — no open anomalies right now.
+      </p>
     </div>
   );
 }

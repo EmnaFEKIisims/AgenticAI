@@ -1,10 +1,19 @@
-// pages/anomaly/AnomalyPage.tsx
+// pages/AnomalyPage.tsx
 // ================================
 // Auto-loads all anomalies on mount — no planning ID input needed.
+//
+// FIX: component imports now match the ACTUAL folder casing
+// (components/anomaly/... lowercase, not components/Anomaly/...) — this was
+// silently breaking on case-sensitive filesystems (Linux CI/deploy) even
+// though it may have worked on Windows dev machines.
+//
+// This file lives flat at src/pages/AnomalyPage.tsx (one level above
+// components/), matching its own "../" import depth — NOT nested under
+// pages/anomaly/.
 
 import { useEffect }    from "react";
 import { useAnomalies } from "../hooks/useAnomalies";
-import AnomalyHeader    from "../components/Anomaly/AnomalyHeader";
+import AnomalyHeader from "../components/Anomaly/AnomalyHeader";
 import AnomalySummary   from "../components/Anomaly/AnomalySummary";
 import AnomalyFilters   from "../components/Anomaly/AnomalyFilters";
 import AnomalyList      from "../components/Anomaly/AnomalyList";

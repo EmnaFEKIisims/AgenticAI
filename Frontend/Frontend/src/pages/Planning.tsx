@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useLocation, useNavigate }         from "react-router-dom";
 import { usePlanning }                      from "../hooks/usePlanning";
 
@@ -24,6 +24,7 @@ import type { PendingMove }    from "../types/scheduleMove";
 import type { SessionSlotOut } from "../types/planningRegeneration";
 import type { SessionSlot, SlotStatus } from "../types/planning";
 import type { HITLStatus }     from "../types/planningValidation";
+import NotificationBell        from "../components/notifications/NotificationBell";
 
 import {
   CalendarDays, Check, CircleAlert, Download, GraduationCap,
@@ -70,6 +71,8 @@ export default function PlanningPage() {
   const [currentWeek,     setCurrentWeek]     = useState(1);
   const [localSchedule,   setLocalSchedule]   = useState<SessionSlotOut[]>([]);
   const [dialog,          setDialog]          = useState<"none"|"reject"|"modify"|"regenerate">("none");
+  const [searchQuery,     setSearchQuery]     = useState("");
+  const [isSearchOpen,    setIsSearchOpen]    = useState(false);
   // ← ADDED: surfaces the case where Validate/Reject can't reach the backend
   //   because planningGroupId is empty, instead of silently pretending success.
   const [hitlError,       setHitlError]       = useState<string | null>(null);
@@ -240,6 +243,31 @@ export default function PlanningPage() {
   const totalWeeks    = localSchedule.length > 0
     ? Math.max(...localSchedule.map(s => parseInt(s.suggested_day?.match(/Week\s+(\d+)/i)?.[1] ?? "1")))
     : 1;
+
+  const filteredSchedule = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return state.schedule;
+
+    return state.schedule.filter((session) => [
+      session.course_title,
+      session.trainer_name,
+      session.room_name,
+      session.group_name,
+      session.suggested_day,
+      session.suggested_time,
+    ].some((value) => String(value ?? "").toLowerCase().includes(query)));
+  }, [searchQuery, state.schedule]);
+
+  const filteredSessionsByDay = useMemo(() => {
+    if (!searchQuery.trim()) return sessionsByDay;
+
+    return filteredSchedule.reduce<Record<string, SessionSlot[]>>((days, session) => {
+      const day = session.suggested_day;
+      if (!days[day]) days[day] = [];
+      days[day].push(session);
+      return days;
+    }, {});
+  }, [filteredSchedule, searchQuery, sessionsByDay]);
 
   // =============================================================================
   //  HITL Handlers — use planningManagementService (correct endpoints)
@@ -468,8 +496,29 @@ export default function PlanningPage() {
           <div className="flex items-center gap-3">
             {hasSchedule && (
               <>
-                <button className="p-2 hover:bg-gray-100 rounded-lg"><Search className="w-4 h-4 text-gray-600" /></button>
-                <button className="p-2 hover:bg-gray-100 rounded-lg"><Filter className="w-4 h-4 text-gray-600" /></button>
+                {isSearchOpen && (
+                  <input
+                    autoFocus
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Search schedule..."
+                    aria-label="Search schedule"
+                    className="w-48 rounded-lg border border-gray-200 px-3 py-1.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsSearchOpen((open) => !open)}
+                  className={`p-2 rounded-lg ${isSearchOpen ? "bg-blue-50" : "hover:bg-gray-100"}`}
+                  aria-label="Search schedule"
+                  title="Search schedule"
+                >
+                  <Search className="w-4 h-4 text-gray-600" />
+                </button>
+                <button type="button" className="p-2 hover:bg-gray-100 rounded-lg" aria-label="Filter schedule" title="Filter schedule">
+                  <Filter className="w-4 h-4 text-gray-600" />
+                </button>
+                <NotificationBell />
                 <div className="h-8 w-px bg-gray-200" />
               </>
             )}
@@ -480,9 +529,6 @@ export default function PlanningPage() {
             <button onClick={() => navigate("/anomaly")}
               className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-100">
               <CircleAlert className="w-4 h-4" />Anomaly report
-            </button>
-            <button onClick={handleReset} className="text-sm text-gray-600 hover:text-gray-900 px-3 py-1.5 hover:bg-gray-100 rounded-lg">
-              Clear All
             </button>
           </div>
         </div>
@@ -644,9 +690,9 @@ export default function PlanningPage() {
               </div>
 
               <div className="overflow-x-auto">
-                {mode === "calendar" && <CalendarGridView sessionsByDay={sessionsByDay} />}
-                {mode === "global"   && <PlanningTable schedule={state.schedule} mode="global" showReasoning={showReasoning} />}
-                {(mode === "group" || mode === "trainer") && <GroupedPlanningView schedule={state.schedule} mode={mode} showReasoning={showReasoning} />}
+                {mode === "calendar" && <CalendarGridView sessionsByDay={filteredSessionsByDay} />}
+                {mode === "global"   && <PlanningTable schedule={filteredSchedule} mode="global" showReasoning={showReasoning} />}
+                {(mode === "group" || mode === "trainer") && <GroupedPlanningView schedule={filteredSchedule} mode={mode} showReasoning={showReasoning} />}
                 {mode === "dnd" && localSchedule.length > 0 && (
                   <div className="p-4">
                     <ScheduleGrid
