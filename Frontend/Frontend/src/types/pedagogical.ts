@@ -3,6 +3,15 @@
 // All TypeScript types for the Pedagogical Agent frontend.
 // Mirrors the backend AuditReport + CriterionReport Pydantic models.
 
+// ← ADDED: needed to type AuditRequest.schedule correctly below — this is
+//   what actually fixes the TS2322 errors ("Type 'SessionSlot[]' is not
+//   assignable to type 'Record<string, unknown>[]'") reported in
+//   PedagogicalAuditPage.tsx at the two runAudit({ schedule: ... }) call
+//   sites. schedule was previously typed as a generic index-signature bag,
+//   but every real call site sends SessionSlot[] (from types/planning.ts),
+//   so the declared type just never matched reality.
+import type { SessionSlot } from "./planning";
+
 // =============================================================================
 //  ENUMS
 // =============================================================================
@@ -64,8 +73,15 @@ export interface AuditReport {
 //  API REQUEST  (what we send to POST /audit)
 // =============================================================================
 
+// ← FIXED: schedule was `Record<string, unknown>[]` — a generic bag type
+//   that no real interface (like SessionSlot) structurally satisfies unless
+//   cast. Every actual caller (PedagogicalAuditPage.tsx) sends the app's
+//   real SessionSlot[] schedule, so we type it as that directly. This is
+//   the root-cause fix for both TS2322 errors ("Type 'SessionSlot[]' is not
+//   assignable to type 'Record<string, unknown>[]'") — no casts needed at
+//   the call sites anymore.
 export interface AuditRequest {
-  schedule?:    Record<string, unknown>[];    // from PlanningAgent output
+  schedule?:    SessionSlot[];               // from PlanningAgent output
   sessions?:    SessionInput[];              // direct input
   planning_id?: number;
   group_name?:  string;

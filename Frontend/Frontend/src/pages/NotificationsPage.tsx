@@ -1,10 +1,14 @@
 // src/pages/notifications/NotificationsPage.tsx
-// Paths fixed: ../../hooks/ and ../../components/ (2 levels up from pages/notifications/)
+// REAL FIX this time: the previous file's comment claimed paths were fixed to
+// go up 2 levels, but the import statements only went up ONE level (../hooks
+// instead of ../../hooks). Since this file lives at
+// src/pages/notifications/NotificationsPage.tsx, it needs TWO "../" to reach
+// src/hooks, src/components, src/types.
 
-import { useState }                  from "react";
-import { useNotifications }          from "../hooks/useNotifications";          // ← 2 levels up
-import NotificationItem              from "../components/notifications/NotificationItem"; // ← 2 levels up
-import type { Notification, NotifType } from "../types/notification";            // ← 2 levels up
+import { useState }                     from "react";
+import { useNotifications }             from "../hooks/useNotifications";
+import NotificationItem                 from "../components/notifications/NotificationItem";
+import type { Notification, NotifType } from "../types/notification";
 
 export default function NotificationsPage() {
   const {
@@ -70,7 +74,7 @@ export default function NotificationsPage() {
 
         {/* Filters */}
         <div className="flex gap-2 flex-wrap">
-          {(["all", "error", "warning", "info"] as (NotifType | "all")[]).map(f => (
+          {(["all", "error", "warning", "info", "success"] as (NotifType | "all")[]).map(f => (
             <button key={f} onClick={() => setFilter(f)}
               className={`rounded-xl px-4 py-1.5 text-xs font-semibold transition ${
                 filter === f
@@ -81,6 +85,7 @@ export default function NotificationsPage() {
               {f === "error"   && "🔴 Errors"}
               {f === "warning" && "🟡 Warnings"}
               {f === "info"    && "🔵 Info"}
+              {f === "success" && "🟢 Success"}
             </button>
           ))}
         </div>

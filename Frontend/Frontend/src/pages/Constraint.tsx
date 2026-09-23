@@ -86,10 +86,20 @@ export default function ConstraintPage() {
         setIsCreatingPlan(true);
         try {
           const planningResponse = await runPlanningWithConstraints(response.planning_dict);
+          // ← FIXED: planningGroupId was never forwarded here — only
+          //   preloadedSchedule and preloadedConstraints were. PlanningPage
+          //   had no way to know which planning_group_id it belonged to,
+          //   which is why Validate/Reject failed with
+          //   "Cannot validate: no planning group found" even right after
+          //   a fresh, successful generation. planningResponse.schedule
+          //   items also carry planning_group_id individually now
+          //   (backend fix), so PlanningPage can derive it either way —
+          //   but passing it explicitly here is the direct, unambiguous fix.
           navigate("/planning", {
             state: {
               preloadedSchedule: planningResponse.schedule,
               preloadedConstraints: planningResponse.final_constraints,
+              planningGroupId: planningResponse.planning_group_id,
             },
           });
         } catch (err) {

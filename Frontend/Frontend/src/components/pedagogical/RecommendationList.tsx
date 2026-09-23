@@ -1,3 +1,12 @@
+// components/pedagogical/RecommendationList.tsx
+// ← CHANGED: this now receives ONLY the concrete, actionable
+//   recommendations (report.recommendations.slice(1) — the backend
+//   prepends the LLM narrative paragraph at index 0, see
+//   agents/pedagogical_agent.py node_build_report). That narrative now
+//   has its own dedicated, more prominent spot (NarrativeSummary.tsx),
+//   so this list is no longer a mix of "read this paragraph" + "do this
+//   thing" — it's a clean, short action list.
+
 interface RecommendationListProps {
   recommendations: string[];
 }
@@ -6,13 +15,13 @@ export default function RecommendationList({ recommendations }: RecommendationLi
   return (
     <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-        Recommendations
+        Action plan
       </p>
-      <h3 className="mt-1 text-lg font-bold text-slate-900">Actions proposees</h3>
+      <h3 className="mt-1 text-lg font-bold text-slate-900">Recommended next steps</h3>
 
       {recommendations.length === 0 ? (
-        <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-500">
-          Aucune recommandation retournee par le backend.
+        <div className="mt-5 rounded-2xl border border-dashed border-emerald-300 bg-emerald-50 p-5 text-sm text-emerald-700">
+          🎉 No action required — the plan complies with the audited criteria.
         </div>
       ) : (
         <ol className="mt-5 space-y-3">

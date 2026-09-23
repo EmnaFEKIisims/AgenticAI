@@ -1,16 +1,17 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Boolean
-from sqlalchemy.orm import relationship
-from db.DB  import Base
-
 """
 models/schedule.py
 ===================
-Updated ScheduleSlot with HITL fields:
+Updated ScheduleSlot:
+  - user_id           : links each slot to its owner
   - planning_group_id : groups all slots from the same generation batch
   - validated_at      : timestamp when admin validated
   - rejected_at       : timestamp when admin rejected
   - validation_notes  : admin's note on validation/rejection
   - move_history      : JSON list of past moves (drag & drop audit trail)
+
+SQL migration (run once in pgAdmin):
+  ALTER TABLE schedule_slots ADD COLUMN IF NOT EXISTS user_id VARCHAR(36) REFERENCES users(id);
+  UPDATE schedule_slots SET user_id = '00000000-0000-0000-0000-000000000001' WHERE user_id IS NULL;
 """
 
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Float, Boolean, JSON
@@ -30,19 +31,23 @@ class ScheduleSlot(Base):
     room_id          = Column(Integer, ForeignKey("rooms.id"),          nullable=False)
     learner_group_id = Column(Integer, ForeignKey("learner_groups.id"), nullable=False)
 
+    # ── User ownership ────────────────────────────────────────────────────────
+    # Links each slot to the user who generated the planning.
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
+
     # ── Scheduling ────────────────────────────────────────────────────────────
     start_time = Column(DateTime, nullable=False)
     end_time   = Column(DateTime, nullable=False)
 
     # ── Planning batch ────────────────────────────────────────────────────────
-    # Groups all slots from the same generation run.
-    # Format: UUID string — e.g. "f47ac10b-58cc-4372-a567-0e02b2c3d479"
-    planning_group_id = Column(String(36), nullable=True, index=True,
-                               comment="UUID grouping all slots from the same generation batch")
-
-    # Generation metadata
-    session_number = Column(Integer, nullable=True,
-                            comment="1-based session number within this planning batch")
+    planning_group_id = Column(
+        String(36), nullable=True, index=True,
+        comment="UUID grouping all slots from the same generation batch",
+    )
+    session_number = Column(
+        Integer, nullable=True,
+        comment="1-based session number within this planning batch",
+    )
 
     # ── AI metrics ────────────────────────────────────────────────────────────
     quality_score           = Column(Float, default=0.0)
@@ -51,16 +56,14 @@ class ScheduleSlot(Base):
     # ── HITL — Human In The Loop ──────────────────────────────────────────────
     is_validated     = Column(Boolean, default=False)
     status           = Column(String,  default="draft")
-    # status values: "draft" | "validated" | "rejected"
-
     validated_at     = Column(DateTime(timezone=True), nullable=True)
     rejected_at      = Column(DateTime(timezone=True), nullable=True)
-    validation_notes = Column(String(500), nullable=True,
-                              comment="Admin's comment when validating or rejecting")
+    validation_notes = Column(
+        String(500), nullable=True,
+        comment="Admin's comment when validating or rejecting",
+    )
 
     # ── Drag & Drop audit trail ───────────────────────────────────────────────
-    # Stores the history of moves as a list of dicts:
-    # [{"from_start": "...", "from_end": "...", "to_start": "...", "moved_at": "..."}, ...]
     move_history = Column(JSON, nullable=True, default=list)
 
     # ── Timestamps ────────────────────────────────────────────────────────────
@@ -68,17 +71,16 @@ class ScheduleSlot(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # ── Relationships ─────────────────────────────────────────────────────────
-    course          = relationship("Course",       back_populates="slots")
-    trainer         = relationship("Trainer",      back_populates="slots")
-    room            = relationship("Room",         back_populates="slots")
-    learner_group   = relationship("LearnerGroup", back_populates="slots")
+    course        = relationship("Course",       back_populates="slots")
+    trainer       = relationship("Trainer",      back_populates="slots")
+    room          = relationship("Room",         back_populates="slots")
+    learner_group = relationship("LearnerGroup", back_populates="slots")
     allocated_equipments = relationship(
         "Equipment", secondary="schedule_equipment", back_populates="slots"
     )
 
-
     def __repr__(self):
         return (
             f"<ScheduleSlot id={self.id} group={self.planning_group_id} "
-            f"course_id={self.course_id} status={self.status}>"
+            f"course_id={self.course_id} status={self.status} user={self.user_id}>"
         )

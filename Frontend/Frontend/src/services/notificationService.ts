@@ -1,45 +1,34 @@
-/// <reference types="vite/client" />
-// src/services/notificationService.ts
+// services/notificationService.ts
+// ===================================
+// FIXED to match the EXACT export names your hooks/useNotifications.ts
+// imports (getAllNotifications, getNotificationSummary, markAsRead,
+// markAllAsRead, deleteNotification) — previous pass used different names
+// and broke the build. Root fix unchanged: goes through apiGet/apiPatch/
+// apiDelete from ./api, which sends X-User-ID on every call.
 
+import { apiGet, apiPatch, apiDelete } from "./api";
 import type { Notification, NotificationSummary } from "../types/notification";
 
-// Fixed: vite/client reference added above → no more 'env' error
-const BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "")
-           ?? "http://localhost:8000";
-
-async function call<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...options.headers },
-    ...options,
-  });
-  if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
-    try { const b = await res.json(); detail = b?.detail ?? detail; } catch {}
-    throw new Error(detail);
-  }
-  return res.json() as Promise<T>;
+export async function getAllNotifications(): Promise<Notification[]> {
+  return apiGet<Notification[]>("/notifications/");
 }
 
-// GET /notifications
-export const getAllNotifications = (limit = 50): Promise<Notification[]> =>
-  call(`/notifications?limit=${limit}`);
+export async function getUnreadNotifications(): Promise<Notification[]> {
+  return apiGet<Notification[]>("/notifications/unread");
+}
 
-// GET /notifications/unread
-export const getUnreadNotifications = (): Promise<Notification[]> =>
-  call("/notifications/unread");
+export async function getNotificationSummary(): Promise<NotificationSummary> {
+  return apiGet<NotificationSummary>("/notifications/summary");
+}
 
-// GET /notifications/summary
-export const getNotificationSummary = (): Promise<NotificationSummary> =>
-  call("/notifications/summary");
+export async function markAsRead(id: number): Promise<Notification> {
+  return apiPatch<Notification>(`/notifications/${id}/read`);
+}
 
-// PATCH /notifications/{id}/read
-export const markAsRead = (id: number): Promise<Notification> =>
-  call(`/notifications/${id}/read`, { method: "PATCH" });
+export async function markAllAsRead(): Promise<{ success: boolean; marked_read: number }> {
+  return apiPatch<{ success: boolean; marked_read: number }>("/notifications/read-all");
+}
 
-// PATCH /notifications/read-all
-export const markAllAsRead = (): Promise<{ success: boolean; marked_read: number }> =>
-  call("/notifications/read-all", { method: "PATCH" });
-
-// DELETE /notifications/{id}
-export const deleteNotification = (id: number): Promise<{ success: boolean }> =>
-  call(`/notifications/${id}`, { method: "DELETE" });
+export async function deleteNotification(id: number): Promise<{ success: boolean }> {
+  return apiDelete<{ success: boolean }>(`/notifications/${id}`);
+}

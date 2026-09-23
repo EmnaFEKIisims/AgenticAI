@@ -3,76 +3,93 @@
 // Chef d'orchestre de l'interface.
 // Zéro logique métier ici — tout vient du hook usePedagogicalAudit().
 //
-// Structure :
-//   <AuditHeader />        ← titre + bouton "Audit Planning"
-//   <AuditScore />         ← gauge circulaire + grade
-//   <AuditSummary />       ← vue synthétique 3 colonnes
-//   <AuditPlanningView />  ← timeline du planning colorée par résultat d'audit
-//   <CriteriaTable />      ← tableau cliquable de tous les critères
-//   <RecommendationList /> ← liste numérotée des recommandations
+// ← REDESIGNED: the page used to dump three things nobody asked for:
+//   (1) a grid of every single session marked "conforme" — its status
+//       was hardcoded to "passed" in toAuditPlanningItem(), so it never
+//       reflected the real audit and was pure noise, AND it was the
+//       heaviest thing on the page to render (up to 200+ session cards),
+//   (2) the AI's readable narrative paragraph buried as item #1 inside a
+//       generic numbered "recommendations" list, indistinguishable from
+//       the raw scoring-service action items,
+//   (3) a full raw criteria table shown open by default, pushing the
+//       actually useful content below the fold.
+//
+//   New structure — a real executive report, short by default:
+//     <AuditHeader />          ← titre + bouton "Audit Planning"
+//     <AuditScore /> + <NarrativeSummary />  ← verdict en un coup d'œil
+//     <AuditSummary />         ← chiffres clés
+//     <KeyFindings />          ← 3 points forts / 3 points à corriger
+//     <RecommendationList />   ← plan d'action concret (sans le narratif)
+//     <CriteriaTable />        ← replié par défaut, pour les curieux
+//     <CriterionCard />        ← détail au clic
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation }         from "react-router-dom";
 
 import AuditHeader             from "../components/pedagogical/AuditHeader";
 import AuditScore              from "../components/pedagogical/AuditScore";
 import AuditSummary            from "../components/pedagogical/AuditSummary";
-import AuditPlanningView       from "../components/pedagogical/AuditPlanningView";
+import NarrativeSummary from "../components/pedagogical/NarrativeSummary";
+import KeyFindings from "../components/pedagogical/KeyFindings";
 import CriteriaTable           from "../components/pedagogical/CriteriaTable";
 import RecommendationList      from "../components/pedagogical/RecommendationList";
 import CriterionCard           from "../components/pedagogical/CriterionCard";
 
 import { usePedagogicalAudit } from "../hooks/usepedagogicalAudit";
-import type { AuditPlanningItem } from "../components/pedagogical/AuditPlanningView";
 import type { CriterionResult } from "../types/pedagogical";
 import type { SessionSlot, Constraints } from "../types/planning";
 
 
 const PEDAGOGICAL_CACHE_KEY = "pedagogical-audit-cache-v1";
 
-function toAuditPlanningItem(slot: SessionSlot, index: number): AuditPlanningItem {
-  const [start = "--:--", end = "--:--"] = slot.suggested_time
-    .split("-")
-    .map((part) => part.trim());
-
-  return {
-    id: slot.session_number ?? index,
-    day: slot.suggested_day || "undefined",
-    course: slot.course_title,
-    start,
-    end,
-    time: slot.suggested_time,
-    trainer: slot.trainer_name,
-    room: slot.room_name,
-    status: "passed",
-    insight: slot.reasoning,
-  };
+// ← ADDED: a cheap, stable fingerprint of "what schedule is this". We don't
+//   need a cryptographic hash — just something that changes whenever the
+//   set of sessions, their slots, or their validation status changes, so we
+//   can tell a *stale* cached report from one that still matches what's on
+//   screen. id + start_time + status covers every case that actually
+//   changes the audit outcome (a move changes start_time, a validate/reject
+//   changes status, adding/removing sessions changes the id set).
+function fingerprintSchedule(schedule: SessionSlot[]): string {
+  return schedule
+    .map((s) => `${s.id ?? s.session_number}:${s.start_time}:${s.status}`)
+    .sort()
+    .join("|");
 }
 
-function readCachedAudit(): { schedule: SessionSlot[]; report: ReturnType<typeof JSON.parse> | null } {
+function readCachedAudit(): {
+  schedule: SessionSlot[];
+  report: ReturnType<typeof JSON.parse> | null;
+  scheduleFingerprint: string;
+} {
   if (typeof window === "undefined") {
-    return { schedule: [], report: null };
+    return { schedule: [], report: null, scheduleFingerprint: "" };
   }
 
   try {
     const raw = window.sessionStorage.getItem(PEDAGOGICAL_CACHE_KEY);
     if (!raw) {
-      return { schedule: [], report: null };
+      return { schedule: [], report: null, scheduleFingerprint: "" };
     }
 
     const parsed = JSON.parse(raw) as {
       schedule?: SessionSlot[];
       report?: unknown;
+      scheduleFingerprint?: string;
     };
 
+    const schedule = Array.isArray(parsed.schedule) ? parsed.schedule : [];
     return {
-      schedule: Array.isArray(parsed.schedule) ? parsed.schedule : [],
+      schedule,
       report: parsed.report ?? null,
+      scheduleFingerprint: parsed.scheduleFingerprint ?? fingerprintSchedule(schedule),
     };
   } catch {
-    return { schedule: [], report: null };
+    return { schedule: [], report: null, scheduleFingerprint: "" };
   }
 }
+
+// ← ADDED: worst-first ordering for the "issues" side of KeyFindings.
+const SEVERITY_RANK: Record<CriterionResult["severity"], number> = { high: 0, medium: 1, low: 2 };
 
 
 export default function PedagogicalAuditPage() {
@@ -86,6 +103,13 @@ export default function PedagogicalAuditPage() {
     ? navState.preloadedSchedule
     : cachedAudit.schedule;
   const autoAuditStarted = useRef(false);
+
+  const currentFingerprint = useMemo(
+    () => fingerprintSchedule(preloadedSchedule),
+    [preloadedSchedule],
+  );
+  const cacheMatchesCurrentSchedule =
+    !!cachedAudit.report && cachedAudit.scheduleFingerprint === currentFingerprint;
 
   // ── All state + API calls come from the hook ─────────────────────────────
   const {
@@ -104,14 +128,18 @@ export default function PedagogicalAuditPage() {
     reset,
   } = usePedagogicalAudit();
 
-  // ── Local UI state — selected criterion for detail card ───────────────────
+  // ── Local UI state ─────────────────────────────────────────────────────────
   const [selected, setSelected] = useState<CriterionResult | null>(null);
+  // ← ADDED: full criteria table is collapsed by default — it's the
+  //   technical appendix, not the headline. Keeps the page short.
+  const [showAllCriteria, setShowAllCriteria] = useState(false);
 
   useEffect(() => {
-    if (cachedAudit.report && !hasReport) {
+    if (cacheMatchesCurrentSchedule && !hasReport) {
       hydrateReport(cachedAudit.report as never);
     }
-  }, [cachedAudit.report, hasReport, hydrateReport]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cacheMatchesCurrentSchedule, cachedAudit.report, hasReport, hydrateReport]);
 
   useEffect(() => {
     if (hasReport || status !== "idle" || preloadedSchedule.length === 0 || autoAuditStarted.current) {
@@ -135,19 +163,18 @@ export default function PedagogicalAuditPage() {
         JSON.stringify({
           schedule: preloadedSchedule,
           report,
+          scheduleFingerprint: currentFingerprint,
         }),
       );
     } catch {
       // Ignore storage failures and keep the page functional.
     }
-  }, [preloadedSchedule, report]);
-
-  const planningTimeline = preloadedSchedule.map(toAuditPlanningItem);
+  }, [preloadedSchedule, report, currentFingerprint]);
 
   // ── Handler: audit cached report or run from preloaded schedule ───────────
   const handleAudit = () => {
     setSelected(null);
-    if (report?.planning_id != null) {
+    if (report?.planning_id != null && cacheMatchesCurrentSchedule) {
       void fetchReport(report.planning_id);
       return;
     }
@@ -162,6 +189,23 @@ export default function PedagogicalAuditPage() {
 
   // ── All criteria combined (failed first) ──────────────────────────────────
   const allCriteria = [...failedCriteria, ...passedCriteria];
+
+  // ← ADDED: split the backend's `recommendations` array. The backend
+  //   (agents/pedagogical_agent.py, node_build_report) always builds it as
+  //   `[explanation_paragraph, ...concrete_action_items]`, so index 0 is
+  //   the human-readable narrative and the rest are the actionable items.
+  //   This is a convention, not a typed field — if you want it
+  //   bullet-proof, add a dedicated `explanation: str` field to
+  //   AuditReport on the backend instead of relying on array position.
+  const narrative   = report?.recommendations?.[0] ?? "";
+  const actionItems = report?.recommendations?.slice(1) ?? [];
+
+  // ← ADDED: curated "what's good / what needs fixing" instead of the old
+  //   full session-by-session grid. Issues sorted worst-severity-first so
+  //   the admin sees what matters most, first.
+  const topIssues = [...failedCriteria].sort(
+    (a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity],
+  );
 
 
   // ── RENDER ────────────────────────────────────────────────────────────────
@@ -200,7 +244,7 @@ export default function PedagogicalAuditPage() {
           </div>
         )}
 
-        {/* ── 1. AUDIT HEADER ─── always visible */}
+        {/* ── AUDIT HEADER ─── always visible */}
         <AuditHeader
           groupName     = {report?.group_name}
           planningId    = {report?.planning_id}
@@ -224,7 +268,6 @@ export default function PedagogicalAuditPage() {
             <p className="mt-1 text-xs text-slate-400">
               Validators → Scoring → LLM explanation
             </p>
-            {/* Step hints */}
             <div className="mt-6 flex flex-wrap justify-center gap-2">
               {['Workload','Breaks','Progression','Practice','Teacher','Room','Score','Explain'].map(s => (
                 <span key={s}
@@ -239,10 +282,8 @@ export default function PedagogicalAuditPage() {
         {/* ── RESULTS — shown after successful audit ──────────────────────── */}
         {hasReport && report && !isLoading && (
           <>
-            {/* ── 2-column layout: Score + Summary ── */}
+            {/* ── Verdict: score gauge + AI narrative side by side ── */}
             <div className="grid gap-6 lg:grid-cols-2">
-
-              {/* ── 2. AUDIT SCORE ─── grade + gauge */}
               <AuditScore
                 score          = {report.score}
                 grade          = {report.grade}
@@ -250,45 +291,62 @@ export default function PedagogicalAuditPage() {
                 complianceRate = {report.compliance_rate}
                 highViolations = {report.high_violations}
               />
-
-              {/* ── 3. AUDIT SUMMARY ─── 3-column synthetic view */}
-              <AuditSummary
-                totalCriteria  = {report.total_criteria}
-                passedCriteria = {report.passed_criteria}
-                failedCriteria = {report.failed_criteria}
-                highViolations = {report.high_violations}
-                totalSessions  = {report.total_sessions}
-                totalHours     = {report.total_hours}
+              <NarrativeSummary
+                narrative   = {narrative}
+                isCompliant = {report.is_compliant}
               />
             </div>
 
-            {/* ── 4. PLANNING VIEW ─── timeline colored by audit */}
-            <AuditPlanningView
-              sessions = {planningTimeline}
+            {/* ── Key numbers ── */}
+            <AuditSummary
+              totalCriteria  = {report.total_criteria}
+              passedCriteria = {report.passed_criteria}
+              failedCriteria = {report.failed_criteria}
+              highViolations = {report.high_violations}
+              totalSessions  = {report.total_sessions}
+              totalHours     = {report.total_hours}
             />
 
-            {/* ── 5+6. SIDE-BY-SIDE: Criteria table + Criterion detail ── */}
-            <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
+            {/* ── What's good / what needs fixing — curated, not everything ── */}
+            <KeyFindings
+              strengths = {passedCriteria}
+              issues    = {topIssues}
+              onSelect  = {setSelected}
+            />
 
-              {/* Left: full criteria table — click → right panel */}
-              <CriteriaTable
-                criteria        = {allCriteria}
-                onSelectCriterion = {setSelected}
-                selectedRule    = {selected?.rule ?? null}
+            {/* ── Concrete action plan (narrative excluded, see above) ── */}
+            {selected ? (
+              <CriterionCard
+                criterion = {selected}
+                onClose   = {() => setSelected(null)}
               />
+            ) : (
+              <RecommendationList recommendations={actionItems} />
+            )}
 
-              {/* Right: detail card OR recommendations */}
-              <div className="space-y-6">
-                {selected ? (
-                  <CriterionCard
-                    criterion = {selected}
-                    onClose   = {() => setSelected(null)}
+            {/* ── Full criteria table — collapsed by default ── */}
+            <div className="rounded-3xl border border-slate-200 bg-white p-1 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setShowAllCriteria(v => !v)}
+                className="flex w-full items-center justify-between rounded-[22px] px-5 py-4 text-left transition hover:bg-slate-50"
+              >
+                <span className="text-sm font-semibold text-slate-700">
+                  View the full details of the {report.total_criteria} audited criteria
+                </span>
+                <span className="text-xs font-medium text-slate-400">
+                  {showAllCriteria ? "Hide ▲" : "Show ▼"}
+                </span>
+              </button>
+              {showAllCriteria && (
+                <div className="border-t border-slate-100">
+                  <CriteriaTable
+                    criteria          = {allCriteria}
+                    onSelectCriterion = {setSelected}
+                    selectedRule      = {selected?.rule ?? null}
                   />
-                ) : (
-                  /* ── 7. RECOMMENDATIONS ─── numbered list from backend */
-                  <RecommendationList recommendations={report.recommendations} />
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
             {/* ISO references footer */}

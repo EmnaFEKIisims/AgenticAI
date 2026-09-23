@@ -7,6 +7,14 @@
 //
 // PlanningPage just calls usePlanning() and renders.
 // Zero business logic lives in the component.
+//
+// ← FIXED: removed the dead/broken handleValidate (called validatePlanning()
+//   with 0 arguments — TS2554 — superseded by usePlanningValidation.ts, which
+//   PlanningPage actually uses).
+// ← FIXED: handleRefresh no longer hardcodes validated:false. SessionSlot now
+//   carries real status/is_validated (types/planning.ts), so we derive the
+//   true validated state from the fetched schedule instead of assuming it's
+//   always unvalidated on every refresh.
 
 import { useState, useCallback, useRef } from "react";
 import type {
@@ -21,7 +29,6 @@ import {
   exportCSV,
   getConstraints,
 } from "../services/planningService";
-import { validatePlanning } from "../services/planningManagementService";
 
 
 // =============================================================================
@@ -47,7 +54,6 @@ interface UsePlanningReturn {
   // ── Actions ────────────────────────────────────────────────────────────────
   setUserInput:    (value: string) => void;
   handleRun:       () => Promise<void>;
-  handleValidate:  () => Promise<void>;
   handleExport:    () => Promise<void>;
   handleRefresh:   () => Promise<void>;   // re-fetch last schedule from backend
   handleReset:     () => void;            // clear everything
@@ -80,6 +86,11 @@ function groupBy<T>(items: T[], key: keyof T): Record<string, T[]> {
     acc[k].push(item);
     return acc;
   }, {} as Record<string, T[]>);
+}
+
+/** True only if every slot in the schedule is validated. Empty schedule → false. */
+function deriveValidated(schedule: SessionSlot[]): boolean {
+  return schedule.length > 0 && schedule.every((s) => s.status === "validated");
 }
 
 
@@ -153,7 +164,7 @@ export function usePlanning(): UsePlanningReturn {
         schedule:    res.schedule,
         constraints: res.final_constraints,
         error:       null,
-        validated:   false,
+        validated:   false,   // a fresh generation is always unvalidated
       });
     } catch (err) {
       if ((err as Error).name === "AbortError") return; // user cancelled
@@ -164,30 +175,6 @@ export function usePlanning(): UsePlanningReturn {
       }));
     }
   }, [userInput]);
-
-
-  // ── handleValidate ──────────────────────────────────────────────────────────
-  // HITL confirmation — marks the schedule as validated.
-
-  const handleValidate = useCallback(async () => {
-    if (!canValidate) return;
-
-    setState((s) => ({ ...s, status: "loading" }));
-    try {
-      await validatePlanning();
-      setState((s) => ({
-        ...s,
-        status:    "validated",
-        validated: true,
-      }));
-    } catch (err) {
-      setState((s) => ({
-        ...s,
-        status: "error",
-        error:  err instanceof Error ? err.message : "Validation failed",
-      }));
-    }
-  }, [canValidate]);
 
 
   // ── handleExport ────────────────────────────────────────────────────────────
@@ -212,17 +199,24 @@ export function usePlanning(): UsePlanningReturn {
 
   // ── handleRefresh ───────────────────────────────────────────────────────────
   // Re-fetches the last schedule stored in backend memory
-  // (useful after page reload, without re-running the agent).
+  // (useful after page reload/remount, without re-running the agent).
 
   const handleRefresh = useCallback(async () => {
     setState((s) => ({ ...s, status: "loading", error: null }));
     try {
       const schedule = await getSchedule();
+
+      // ← FIXED: derive the real validated state from the fetched slots
+      //   instead of hardcoding false. SessionSlot now carries `status`,
+      //   so we can tell truth from the backend rather than assuming
+      //   every refresh means "nothing validated yet".
+      const validated = deriveValidated(schedule);
+
       setState((s) => ({
         ...s,
-        status:   "success",
+        status:    validated ? "validated" : "success",
         schedule,
-        validated: false,
+        validated,
       }));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Could not fetch schedule";
@@ -282,13 +276,14 @@ export function usePlanning(): UsePlanningReturn {
   }, []);
 
   const hydrateSchedule = useCallback((schedule: SessionSlot[], constraints?: Constraints | null) => {
+    const validated = deriveValidated(schedule);
     setState((s) => ({
       ...s,
-      status: "success",
+      status: validated ? "validated" : "success",
       schedule,
       constraints: constraints ?? s.constraints,
       error: null,
-      validated: false,
+      validated,
     }));
   }, []);
 
@@ -314,7 +309,6 @@ export function usePlanning(): UsePlanningReturn {
     // Actions
     setUserInput,
     handleRun,
-    handleValidate,
     handleExport,
     handleRefresh,
     handleReset,

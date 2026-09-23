@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useLocation, useNavigate }         from "react-router-dom";
 import { usePlanning }                      from "../hooks/usePlanning";
 
@@ -22,8 +22,9 @@ import { useScheduleMove }         from "../hooks/useScheduleMove";
 // ── Types ────────────────────────────────────────────────────────────────────
 import type { PendingMove }    from "../types/scheduleMove";
 import type { SessionSlotOut } from "../types/planningRegeneration";
-import type { SessionSlot } from "../types/planning";
+import type { SessionSlot, SlotStatus } from "../types/planning";
 import type { HITLStatus }     from "../types/planningValidation";
+import NotificationBell        from "../components/notifications/NotificationBell";
 
 import {
   CalendarDays, Check, CircleAlert, Download, GraduationCap,
@@ -33,6 +34,27 @@ import {
 } from "lucide-react";
 
 type PlanningViewMode = "global" | "group" | "trainer" | "calendar" | "dnd";
+
+// ── ADDED: base URL used elsewhere in the app's services. If your services
+//   use an axios instance with its own baseURL, replace this fetch call with
+//   a proper `getLastState()` export from planningService.ts instead — this
+//   inline version exists only so PlanningPage doesn't need that file to be
+//   handed over to build the fix. ───────────────────────────────────────────
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
+
+async function fetchLastState(): Promise<{
+  has_planning: boolean;
+  planning_group_id: string;
+  hitl_status: "idle" | "pending" | "validated" | "rejected";
+} | null> {
+  try {
+    const res = await fetch(`${API_BASE}/planning/last-state`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
 
 export default function PlanningPage() {
 
@@ -49,6 +71,11 @@ export default function PlanningPage() {
   const [currentWeek,     setCurrentWeek]     = useState(1);
   const [localSchedule,   setLocalSchedule]   = useState<SessionSlotOut[]>([]);
   const [dialog,          setDialog]          = useState<"none"|"reject"|"modify"|"regenerate">("none");
+  const [searchQuery,     setSearchQuery]     = useState("");
+  const [isSearchOpen,    setIsSearchOpen]    = useState(false);
+  // ← ADDED: surfaces the case where Validate/Reject can't reach the backend
+  //   because planningGroupId is empty, instead of silently pretending success.
+  const [hitlError,       setHitlError]       = useState<string | null>(null);
 
   // ── Existing hook ────────────────────────────────────────────────────────────
   const {
@@ -63,11 +90,24 @@ export default function PlanningPage() {
   const move         = useScheduleMove();
 
   // ── Sync localSchedule ───────────────────────────────────────────────────────
+  // ← FIXED: previously this hardcoded start_time/end_time to "" and
+  //   status/is_validated to "draft"/false on every run — discarding real
+  //   move/validation data any time state.schedule changed reference,
+  //   including right after a successful move (hydrateSchedule call).
+  //   SessionSlot now carries the real fields (types/planning.ts), so we
+  //   use them directly instead of hardcoding, and we derive hitlStatus
+  //   from the real per-slot status instead of always forcing "pending".
   useEffect(() => {
     if (state.schedule?.length) {
-      // Convert SessionSlot[] -> SessionSlotOut[]
       const mapped: SessionSlotOut[] = state.schedule.map((s: SessionSlot) => ({
-        id: undefined,
+        id: s.id,
+        // ← ADDED: every session now carries its own group id from the
+        //   backend, so the frontend can always derive the current
+        //   planning_group_id straight from the loaded schedule instead of
+        //   trusting navigation state (which was found to silently drop
+        //   this field, and — more importantly — to go stale on browser
+        //   "back" navigation, see the hydrate effect below).
+        planning_group_id: s.planning_group_id,
         session_number: s.session_number,
         course_id: s.course_id,
         course_title: s.course_title,
@@ -76,23 +116,67 @@ export default function PlanningPage() {
         room_id: s.room_id,
         room_name: s.room_name,
         group_name: s.group_name,
-        learner_group_id: (s as any).group_id ?? 0,
+        learner_group_id: s.group_id ?? 0,
         suggested_day: s.suggested_day,
         suggested_time: s.suggested_time,
-        start_time: "",
-        end_time: "",
-        status: "draft",
-        is_validated: false,
-        quality_score: 0,
-        pedagogical_audit_score: 0,
+        start_time: s.start_time ?? "",
+        end_time: s.end_time ?? "",
+        status: s.status ?? "draft",
+        is_validated: s.is_validated ?? false,
+        quality_score: s.quality_score ?? 0,
+        pedagogical_audit_score: s.pedagogical_audit_score ?? 0,
         reasoning: s.reasoning,
       }));
       setLocalSchedule(mapped);
-      if (hitlStatus === "idle") setHitlStatus("pending");
+
+      // ← ADDED: derive planningGroupId directly from the schedule's own
+      //   data (every session carries planning_group_id from the backend)
+      //   instead of relying on navigation state or an ephemeral cache.
+      const groupIdFromSchedule = mapped.find(s => s.planning_group_id)?.planning_group_id;
+      if (groupIdFromSchedule && groupIdFromSchedule !== planningGroupId) {
+        setPlanningGroupId(groupIdFromSchedule);
+      }
+
+      // Derive hitlStatus from real backend truth instead of blindly
+      // forcing "pending" whenever a schedule shows up.
+      const allValidated = mapped.every(s => s.status === "validated");
+      const allRejected  = mapped.length > 0 && mapped.every(s => s.status === "rejected");
+      if (allValidated) {
+        setHitlStatus("validated");
+      } else if (allRejected) {
+        setHitlStatus("rejected");
+      } else if (hitlStatus === "idle") {
+        setHitlStatus("pending");
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.schedule]);
 
-  // ── Hydrate from navigation state ────────────────────────────────────────────
+  // ── Hydrate on mount ─────────────────────────────────────────────────────────
+  // ← FIXED (root cause of "à chaque fois je valide, au retour ça revient
+  //   à l'état initial" — confirmed even AFTER the DB-sourced
+  //   PlanningRouter.py fix): this used to take an early `return` whenever
+  //   `location.state.preloadedSchedule` was present, and NEVER call the
+  //   backend in that case.
+  //
+  //   The bug: `location.state` is frozen on the history entry at the
+  //   moment it was pushed. When you land on /planning via
+  //   `navigate("/planning", { state: {...} })` from ConstraintPage, that
+  //   state is the freshly-generated DRAFT schedule. If you later validate
+  //   (pure React state change — it does NOT re-push a new history entry)
+  //   and then return here via a generic "back" button (`navigate(-1)` /
+  //   browser back), React Router replays that SAME, ORIGINAL history
+  //   entry — with its ORIGINAL, now-stale `location.state`. The old code
+  //   trusted that stale draft data and never asked the backend, so the
+  //   validated/moved state you'd just saved to the DB was never even
+  //   requested, let alone shown.
+  //
+  //   Fix: `location.state.preloadedSchedule`, when present, is used only
+  //   for an instant optimistic paint (avoids a blank/loading flash on
+  //   first arrival from ConstraintPage). We then ALWAYS reconcile with
+  //   the backend's real, DB-sourced state via /last-state + a full
+  //   /schedule refresh — on every mount, regardless of whether nav state
+  //   was present. The DB is now the only thing that gets the final word.
   useEffect(() => {
     const navState = location.state as {
       preloadedSchedule?:    unknown;
@@ -102,10 +186,12 @@ export default function PlanningPage() {
 
     if (navState?.planningGroupId) setPlanningGroupId(navState.planningGroupId);
 
+    // Optimistic instant paint only — NOT treated as authoritative anymore.
     if (Array.isArray(navState?.preloadedSchedule) && navState.preloadedSchedule.length > 0) {
-      // navState.preloadedSchedule may be SessionSlot[] or SessionSlotOut[] depending on navigation source.
       const pre = navState.preloadedSchedule as unknown[];
       const asSessionSlots: SessionSlot[] = pre.map((p: any) => ({
+        id: p.id,
+        planning_group_id: p.planning_group_id,
         session_number: p.session_number,
         course_id: p.course_id,
         course_title: p.course_title,
@@ -118,14 +204,37 @@ export default function PlanningPage() {
         suggested_day: p.suggested_day,
         suggested_time: p.suggested_time,
         reasoning: p.reasoning ?? "",
+        start_time: p.start_time ?? "",
+        end_time: p.end_time ?? "",
+        status: p.status ?? "draft",
+        is_validated: p.is_validated ?? false,
+        quality_score: p.quality_score ?? 0,
+        pedagogical_audit_score: p.pedagogical_audit_score ?? 0,
       }));
 
       hydrateSchedule(asSessionSlots, (navState.preloadedConstraints as typeof state.constraints) ?? null);
-      setHitlStatus("pending");
-      return;
+      // ← No `return` here anymore — we fall through and still reconcile
+      //   with the backend below, which is exactly what was missing.
     }
-    void handleRefresh();
-  }, []);   // ← run once only
+
+    // ← ALWAYS re-derive the current planning + its real HITL status from
+    //   the backend (now DB-sourced, see PlanningRouter.py), whether or
+    //   not navigation state was present. This is what makes the page
+    //   correct on every return path: a fresh nav from ConstraintPage, a
+    //   remount after /pedagogical-audit, or a browser "back" that replays
+    //   stale history state.
+    (async () => {
+      const last = await fetchLastState();
+      if (last?.has_planning) {
+        setPlanningGroupId(last.planning_group_id);
+        if (last.hitl_status === "validated") setHitlStatus("validated");
+        else if (last.hitl_status === "rejected") setHitlStatus("rejected");
+        else setHitlStatus("pending");
+      }
+      void handleRefresh();   // pulls the full, authoritative schedule (GET /planning/schedule)
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);   // ← run once only, on every mount of this page
 
   // ── Stats ────────────────────────────────────────────────────────────────────
   const totalSessions = state.schedule.length;
@@ -135,23 +244,86 @@ export default function PlanningPage() {
     ? Math.max(...localSchedule.map(s => parseInt(s.suggested_day?.match(/Week\s+(\d+)/i)?.[1] ?? "1")))
     : 1;
 
+  const filteredSchedule = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return state.schedule;
+
+    return state.schedule.filter((session) => [
+      session.course_title,
+      session.trainer_name,
+      session.room_name,
+      session.group_name,
+      session.suggested_day,
+      session.suggested_time,
+    ].some((value) => String(value ?? "").toLowerCase().includes(query)));
+  }, [searchQuery, state.schedule]);
+
+  const filteredSessionsByDay = useMemo(() => {
+    if (!searchQuery.trim()) return sessionsByDay;
+
+    return filteredSchedule.reduce<Record<string, SessionSlot[]>>((days, session) => {
+      const day = session.suggested_day;
+      if (!days[day]) days[day] = [];
+      days[day].push(session);
+      return days;
+    }, {});
+  }, [filteredSchedule, searchQuery, sessionsByDay]);
+
   // =============================================================================
   //  HITL Handlers — use planningManagementService (correct endpoints)
   // =============================================================================
 
+  // ← FIXED: this used to ONLY flip the local hitlStatus flag, leaving the
+  //   actual schedule data (localSchedule / state.schedule) still marked
+  //   "draft". That stale "draft" data is exactly what gets forwarded as
+  //   navigation state to /pedagogical-audit — and (see the mount effect
+  //   above) navigation state can never be trusted as authoritative again
+  //   anyway, but keeping it accurate here still avoids a visible flash of
+  //   wrong data before the backend reconciliation above completes.
   const handleValidate = useCallback(async () => {
-    // Uses POST /planning/{group_id}/validate — correct endpoint
-    if (planningGroupId) {
-      await validation.validate(planningGroupId);
+    setHitlError(null);
+    let groupId = planningGroupId;
+
+    if (!groupId) {
+      const last = await fetchLastState();
+      groupId = last?.planning_group_id ?? "";
+      if (groupId) setPlanningGroupId(groupId);
     }
-    // Update local UI state — do NOT call old validatePlanning() hook
+
+    if (!groupId) {
+      setHitlError("Cannot validate: no planning group found. Try refreshing the page.");
+      return;   // ← do NOT flip hitlStatus — nothing was actually saved
+    }
+
+    await validation.validate(groupId);
     setHitlStatus("validated");
-  }, [planningGroupId, validation]);
+
+    setLocalSchedule(prev => prev.map(s => ({ ...s, status: "validated", is_validated: true })));
+    const validatedForState: SessionSlot[] = state.schedule.map(s => ({
+      ...s,
+      status: "validated" as SlotStatus,
+      is_validated: true,
+    }));
+    hydrateSchedule(validatedForState, state.constraints);
+  }, [planningGroupId, validation, state.schedule, state.constraints, hydrateSchedule]);
 
   const handleRejectConfirm = useCallback(async (reason: string) => {
-    if (planningGroupId) {
-      await validation.reject(planningGroupId, reason);
+    setHitlError(null);
+    let groupId = planningGroupId;
+
+    if (!groupId) {
+      const last = await fetchLastState();
+      groupId = last?.planning_group_id ?? "";
+      if (groupId) setPlanningGroupId(groupId);
     }
+
+    if (!groupId) {
+      setHitlError("Cannot reject: no planning group found. Try refreshing the page.");
+      setDialog("none");
+      return;
+    }
+
+    await validation.reject(groupId, reason);
     setHitlStatus("rejected");
     setLocalSchedule([]);
     setDialog("none");
@@ -181,6 +353,8 @@ export default function PlanningPage() {
       setCurrentWeek(1);
       // Convert SessionSlotOut[] -> SessionSlot[] for hydrateSchedule
       const fromOut: SessionSlot[] = (res.schedule ?? []).map((p: any) => ({
+        id: p.id,
+        planning_group_id: p.planning_group_id ?? res.planning_group_id,
         session_number: p.session_number,
         course_id: p.course_id,
         course_title: p.course_title,
@@ -193,6 +367,12 @@ export default function PlanningPage() {
         suggested_day: p.suggested_day,
         suggested_time: p.suggested_time,
         reasoning: p.reasoning ?? "",
+        start_time: p.start_time ?? "",
+        end_time: p.end_time ?? "",
+        status: p.status ?? "draft",
+        is_validated: p.is_validated ?? false,
+        quality_score: p.quality_score ?? 0,
+        pedagogical_audit_score: p.pedagogical_audit_score ?? 0,
       }));
       hydrateSchedule(fromOut, null);
     }
@@ -212,34 +392,62 @@ export default function PlanningPage() {
     await move.dropOn(pendingMove, planningGroupId);
   }, [move, planningGroupId]);
 
-const handleConfirmMove = useCallback(async (adminNote?: string) => {
-  const result = await move.confirmMove(adminNote);
-  if (result?.success && move.pendingMove) {
-    const target = move.pendingMove.target;
+  // ← FIXED: previously built `updatedSchedule` (SessionSlotOut[]) and passed
+  //   it to hydrateSchedule via an unsafe `as unknown as typeof state.schedule`
+  //   cast. That cast doesn't rename fields — SessionSlotOut uses
+  //   `learner_group_id` while SessionSlot expects `group_id` — so the group
+  //   silently came through as 0 downstream. Now we build a real,
+  //   correctly-shaped SessionSlot[] instead of casting, and we carry
+  //   planning_group_id through too (was dropped here before).
+  const handleConfirmMove = useCallback(async (adminNote?: string) => {
+    const result = await move.confirmMove(adminNote);
+    if (result?.success && move.pendingMove) {
+      const target  = move.pendingMove.target;
+      const movedId = move.pendingMove.slot_id;
 
-    // Build the updated schedule
-    const updatedSchedule = localSchedule.map(s =>
-      (s.id ?? s.session_number) === move.pendingMove?.slot_id
-        ? {
-            ...s,
-            start_time:    target.start_time,
-            end_time:      target.end_time,
-            suggested_day: `Week ${target.week} — ${target.day}`,
-            suggested_time: target.time_slot,
-          }
-        : s
-    );
+      const updatedLocal: SessionSlotOut[] = localSchedule.map(s =>
+        (s.id ?? s.session_number) === movedId
+          ? {
+              ...s,
+              start_time:     target.start_time,
+              end_time:       target.end_time,
+              suggested_day:  `Week ${target.week} — ${target.day}`,
+              suggested_time: target.time_slot,
+              status:         "draft",   // backend resets status to draft on move
+              is_validated:   false,
+            }
+          : s
+      );
+      setLocalSchedule(updatedLocal);
 
-    // ← Fix: sync BOTH states
-    setLocalSchedule(updatedSchedule);
-    hydrateSchedule(
-      updatedSchedule as unknown as typeof state.schedule, 
-      state.constraints   // ← keep existing constraints
-    );
+      // Build a real SessionSlot[] (not a lossy cast) to keep state.schedule in sync
+      const updatedForState: SessionSlot[] = updatedLocal.map(s => ({
+        id: s.id,
+        planning_group_id: s.planning_group_id ?? planningGroupId,
+        session_number: s.session_number,
+        course_id: s.course_id,
+        course_title: s.course_title,
+        trainer_id: s.trainer_id,
+        trainer_name: s.trainer_name,
+        room_id: s.room_id,
+        room_name: s.room_name,
+        group_id: s.learner_group_id,
+        group_name: s.group_name,
+        suggested_day: s.suggested_day,
+        suggested_time: s.suggested_time,
+        reasoning: s.reasoning,
+        start_time: s.start_time,
+        end_time: s.end_time,
+        status: s.status as SlotStatus,
+        is_validated: s.is_validated,
+        quality_score: s.quality_score,
+        pedagogical_audit_score: s.pedagogical_audit_score,
+      }));
 
-    setHitlStatus("pending");   // move resets validation
-  }
-}, [move, localSchedule, hydrateSchedule, state.constraints]);
+      hydrateSchedule(updatedForState, state.constraints);
+      setHitlStatus("pending");   // move resets validation
+    }
+  }, [move, localSchedule, hydrateSchedule, state.constraints, planningGroupId]);
 
   // =============================================================================
   //  Render
@@ -288,21 +496,39 @@ const handleConfirmMove = useCallback(async (adminNote?: string) => {
           <div className="flex items-center gap-3">
             {hasSchedule && (
               <>
-                <button className="p-2 hover:bg-gray-100 rounded-lg"><Search className="w-4 h-4 text-gray-600" /></button>
-                <button className="p-2 hover:bg-gray-100 rounded-lg"><Filter className="w-4 h-4 text-gray-600" /></button>
+                {isSearchOpen && (
+                  <input
+                    autoFocus
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Search schedule..."
+                    aria-label="Search schedule"
+                    className="w-48 rounded-lg border border-gray-200 px-3 py-1.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsSearchOpen((open) => !open)}
+                  className={`p-2 rounded-lg ${isSearchOpen ? "bg-blue-50" : "hover:bg-gray-100"}`}
+                  aria-label="Search schedule"
+                  title="Search schedule"
+                >
+                  <Search className="w-4 h-4 text-gray-600" />
+                </button>
+                <button type="button" className="p-2 hover:bg-gray-100 rounded-lg" aria-label="Filter schedule" title="Filter schedule">
+                  <Filter className="w-4 h-4 text-gray-600" />
+                </button>
+                <NotificationBell />
                 <div className="h-8 w-px bg-gray-200" />
               </>
             )}
-            <button onClick={() => navigate("/pedagogical-audit", { state: { preloadedSchedule: state.schedule, preloadedConstraints: state.constraints } })}
+            <button onClick={() => navigate("/pedagogical-audit", { state: { preloadedSchedule: localSchedule, preloadedConstraints: state.constraints, planningGroupId } })}
               className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-1.5 text-sm font-medium text-emerald-700 hover:bg-emerald-100">
               <ClipboardCheck className="w-4 h-4" />Pedagogical report
             </button>
             <button onClick={() => navigate("/anomaly")}
               className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-100">
               <CircleAlert className="w-4 h-4" />Anomaly report
-            </button>
-            <button onClick={handleReset} className="text-sm text-gray-600 hover:text-gray-900 px-3 py-1.5 hover:bg-gray-100 rounded-lg">
-              Clear All
             </button>
           </div>
         </div>
@@ -312,10 +538,10 @@ const handleConfirmMove = useCallback(async (adminNote?: string) => {
         <div className="max-w-400 mx-auto space-y-6">
 
           {/* Error */}
-          {(validation.error || regeneration.error || move.error) && (
+          {(hitlError || validation.error || regeneration.error || move.error) && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
               <CircleAlert className="w-5 h-5 text-red-600" />
-              <span className="text-red-700 font-medium">{validation.error || regeneration.error || move.error}</span>
+              <span className="text-red-700 font-medium">{hitlError || validation.error || regeneration.error || move.error}</span>
             </div>
           )}
 
@@ -464,9 +690,9 @@ const handleConfirmMove = useCallback(async (adminNote?: string) => {
               </div>
 
               <div className="overflow-x-auto">
-                {mode === "calendar" && <CalendarGridView sessionsByDay={sessionsByDay} />}
-                {mode === "global"   && <PlanningTable schedule={state.schedule} mode="global" showReasoning={showReasoning} />}
-                {(mode === "group" || mode === "trainer") && <GroupedPlanningView schedule={state.schedule} mode={mode} showReasoning={showReasoning} />}
+                {mode === "calendar" && <CalendarGridView sessionsByDay={filteredSessionsByDay} />}
+                {mode === "global"   && <PlanningTable schedule={filteredSchedule} mode="global" showReasoning={showReasoning} />}
+                {(mode === "group" || mode === "trainer") && <GroupedPlanningView schedule={filteredSchedule} mode={mode} showReasoning={showReasoning} />}
                 {mode === "dnd" && localSchedule.length > 0 && (
                   <div className="p-4">
                     <ScheduleGrid

@@ -7,20 +7,23 @@ export interface RegenerateRequest {
   attempt:            number;
 }
 
+/** ← FIXED: matches PlanningRouter.py regenerate_planning() actual return
+ *  shape (PlanningRunResponse). The previous version declared `attempt`
+ *  and `message` fields that the backend never sends. */
 export interface RegenerateResponse {
   success:           boolean;
   planning_group_id: string;
   total_sessions:    number;
-  attempt:           number;
   engine:            string;         // "ortools" | "greedy"
   final_constraints: Record<string, unknown>;
   schedule:          SessionSlotOut[];
-  message:           string;
 }
 
 // Inline type to avoid circular import
 export interface SessionSlotOut {
   id?:                     number;
+  // ← ADDED: matches PlanningRouter.py SessionSlotOut.planning_group_id
+  planning_group_id?:      string;
   session_number:          number;
   course_id:               number;
   course_title:            string;

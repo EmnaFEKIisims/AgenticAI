@@ -1,4 +1,7 @@
 // hooks/useAnomalies.ts
+// FIX: interface had a typo "anommlies" instead of "anomalies" (line 13),
+// while the rest of the file (useState, return statement) correctly used
+// "anomalies" — that mismatch is what TS2561 was pointing at.
 
 import { useState, useCallback } from "react";
 import type { Anomaly, AnomalySeverity, AnomalyStatus, SuggestionsResponse } from "../types/anomaly";

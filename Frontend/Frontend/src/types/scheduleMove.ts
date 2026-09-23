@@ -7,23 +7,23 @@ export interface MoveRequest {
 }
 
 export interface MoveHistoryEntry {
-  from_start: string;
-  from_end:   string;
-  to_start:   string;
-  to_end:     string;
+  from_start:  string;
+  from_end:    string;
+  to_start:    string;
+  to_end:      string;
   admin_note?: string;
-  moved_at:   string;
+  moved_at:    string;
 }
 
+/** ← FIXED: matches PlanningRouter.py apply_move() actual return shape.
+ *  The previous version declared from_start/from_end/to_start/to_end/
+ *  move_count/message, none of which the backend actually returns. */
 export interface MoveResponse {
-  success:    boolean;
-  slot_id:    number;
-  from_start: string;
-  from_end:   string;
-  to_start:   string;
-  to_end:     string;
-  move_count: number;
-  message:    string;
+  success:         boolean;
+  slot_id:         number;
+  session_number:  number;
+  new_start_time:  string;   // ISO 8601
+  new_end_time:    string;   // ISO 8601
 }
 
 /** Represents the target cell where a session is dropped. */

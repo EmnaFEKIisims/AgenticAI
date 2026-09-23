@@ -6,6 +6,16 @@ SQLAlchemy model for a detected anomaly in a planning.
 An anomaly is produced by the Anomaly Agent after the Pedagogical Agent's audit.
 One AuditReport criterion failure = one or more Anomaly rows.
 
+← CHANGED: added `user_id` — a real FK to `users.id` (String(36), matches
+  models/user.py). Every anomaly now belongs to the user whose planning
+  generated it. This is what lets the notification system show each
+  user ONLY their own anomalies, instead of a global unscoped list.
+
+  Also added `planning_group_id` — the UUID of the specific planning
+  VERSION (matches ScheduleSlot.planning_group_id) this anomaly was
+  detected on, so anomalies can be scoped to "the current planning"
+  rather than accumulating forever across regenerations.
+
 Statuses:
   OPEN         → just detected, needs attention
   ACKNOWLEDGED → admin has seen it but not yet resolved
@@ -63,6 +73,17 @@ class Anomaly(Base):
 
     id               = Column(Integer, primary_key=True, index=True)
 
+    # ← ADDED: real ownership link -- every anomaly belongs to ONE user
+    #   (the owner of the planning that produced it).
+    user_id          = Column(String(36), ForeignKey("users.id"), nullable=True, index=True,
+                              comment="Owner of the planning that generated this anomaly")
+    user             = relationship("User")
+
+    # ← ADDED: which planning VERSION this anomaly was detected on.
+    #   Matches models.schedule.ScheduleSlot.planning_group_id.
+    planning_group_id = Column(String(36), nullable=True, index=True,
+                              comment="UUID of the planning version this anomaly belongs to")
+
     # FK links
     planning_id      = Column(Integer, ForeignKey("schedule_slots.id"), nullable=True,
                               comment="Planning that generated this anomaly")
@@ -108,6 +129,6 @@ class Anomaly(Base):
 
     def __repr__(self) -> str:
         return (
-            f"<Anomaly id={self.id} type={self.anomaly_type} "
+            f"<Anomaly id={self.id} user={self.user_id} type={self.anomaly_type} "
             f"severity={self.severity} status={self.status}>"
         )

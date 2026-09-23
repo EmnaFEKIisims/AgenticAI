@@ -13,14 +13,14 @@ function criterionStatus(criterion: CriterionResult): {
 } {
   if (criterion.passed) {
     return {
-      label: "Conforme",
+      label: "Compliant",
       className: "border-emerald-200 bg-emerald-50 text-emerald-700",
     };
   }
 
   if (criterion.severity === "high") {
     return {
-      label: "Echec",
+      label: "Failed",
       className: "border-rose-200 bg-rose-50 text-rose-700",
     };
   }
@@ -40,14 +40,14 @@ export default function CriteriaTable({
     <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
       <div className="border-b border-slate-200 bg-slate-50/80 px-5 py-4">
         <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
-          Criteres audites
+          Audited criteria
         </p>
-        <h3 className="mt-1 text-lg font-bold text-slate-900">Resultats par critere</h3>
+        <h3 className="mt-1 text-lg font-bold text-slate-900">Results by criterion</h3>
       </div>
 
       {criteria.length === 0 ? (
         <div className="px-5 py-10 text-center text-sm text-slate-500">
-          Aucun critere audite pour le moment.
+          No audited criteria available at the moment.
         </div>
       ) : (
         <>
@@ -55,10 +55,10 @@ export default function CriteriaTable({
             <table className="min-w-full divide-y divide-slate-200">
               <thead className="bg-white">
                 <tr className="text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  <th className="px-5 py-3">Critere</th>
-                  <th className="px-5 py-3">Statut</th>
+                  <th className="px-5 py-3">Criterion</th>
+                  <th className="px-5 py-3">Status</th>
                   <th className="px-5 py-3">Score</th>
-                  <th className="px-5 py-3">Explication</th>
+                  <th className="px-5 py-3">Explanation</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
@@ -116,7 +116,7 @@ export default function CriteriaTable({
 
                       <td className="px-5 py-4 align-top">
                         <p className="max-w-xl text-sm leading-relaxed text-slate-600 line-clamp-2">
-                          {criterion.message || "Aucune explication fournie."}
+                          {criterion.message || "No explanation provided."}
                         </p>
                       </td>
                     </tr>
@@ -151,7 +151,7 @@ export default function CriteriaTable({
                     <span className="text-xs text-slate-500">{ratioPct}%</span>
                   </div>
                   <p className="mt-2 text-sm text-slate-600 line-clamp-2">
-                    {criterion.message || "Aucune explication fournie."}
+                    {criterion.message || "No explanation provided."}
                   </p>
                 </button>
               );

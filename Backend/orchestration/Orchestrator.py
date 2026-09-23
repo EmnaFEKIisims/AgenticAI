@@ -3,6 +3,13 @@ orchestration/orchestrator.py
 ==============================
 LangGraph orchestrator — updated with RAG integration.
 
+← CHANGED (only node_run_anomaly_detection): now passes state["user_id"]
+  into AnomalyAgent.analyze(), which is REQUIRED since agents/Anomaly.py
+  now scopes + auto-cleans anomalies/notifications per user. Without
+  this, the terminal/orchestrator flow would crash on the missing
+  required `user_id` argument. Everything else in this file is
+  unchanged from your version.
+
 RAG is added at 5 key events:
   1. BEFORE planning → retrieve context (user preferences, past decisions)
   2. AFTER validation → store positive signal
@@ -112,7 +119,7 @@ class OrchestratorState(TypedDict):
 
     # PedagogicalAgent outputs
     audit_report:      Optional[AuditReport]
-    audit_status:      str           # "pending" | "done" | "skipped"
+    audit_status:       str           # "pending" | "done" | "skipped"
 
     # AnomalyAgent outputs
     anomaly_result:      Optional[AnomalyAgentResult]
@@ -398,9 +405,17 @@ def node_run_anomaly_detection(state: OrchestratorState, db: Session) -> dict:
         print("  No schedule — skipping anomaly detection.")
         return {"anomaly_result": None, "anomaly_status": "skipped"}
 
+    # ← CHANGED: user_id is now REQUIRED by AnomalyAgent.analyze() — it's
+    #   what scopes anomalies/notifications to this user and lets old
+    #   ones be auto-cleared on every new generation/regeneration.
+    user_id = state.get("user_id", DEFAULT_TERMINAL_USER_ID)
+
     try:
         agent  = AnomalyAgent(db=db)
-        result = agent.analyze(schedule=planning_result.schedule)
+        result = agent.analyze(
+            schedule = planning_result.schedule,
+            user_id  = user_id,
+        )
         print(f"  → {result.summary}")
         return {"anomaly_result": result, "anomaly_status": "pending"}
     except Exception as e:

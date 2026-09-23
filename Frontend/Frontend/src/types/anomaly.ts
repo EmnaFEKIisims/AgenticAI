@@ -2,6 +2,12 @@
 // ==================
 // All TypeScript types for the Anomaly Agent frontend.
 // Mirrors exactly the Pydantic schemas in api/AnomalyRouter.py
+//
+// CHANGES vs previous version:
+// - Anomaly gained user_id / planning_group_id (real per-user scoping).
+// - AnalyzeRequest lost admin_id (never used, never sent) and gained
+//   planning_group_id (optional — lets you tag which "version" of the
+//   planning these anomalies/notifications belong to).
 
 // =============================================================================
 //  ENUMS
@@ -50,6 +56,8 @@ export interface Anomaly {
   iso_reference:    string | null;
   detected_at:      string;
   resolved_at:      string | null;
+  user_id:          string | null;
+  planning_group_id: string | null;
 }
 
 // =============================================================================
@@ -62,7 +70,7 @@ export interface AnalyzeRequest {
   rooms?:         Record<string, unknown>[];
   equipment_data?: Record<string, unknown>[];
   forbidden_days?: string[];
-  admin_id?:      number;
+  planning_group_id?: string;
 }
 
 export interface AnalyzeResponse {
