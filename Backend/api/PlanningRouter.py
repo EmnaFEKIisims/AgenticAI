@@ -38,6 +38,15 @@ Your original code + fixes:
     `reasoning = Column(Text, nullable=True)` column to ScheduleSlot and
     save `s.get("reasoning", "")` in `_save_to_db` — happy to wire that
     up once the column exists.
+
+  ← NEW (per-user data isolation):
+    PlanningAgent now requires user_id and only ever loads THAT user's
+    own trainers/rooms/groups/courses/equipment (see agents/planning_agent.py).
+    The 3 endpoints that instantiate it (/run, /run/with-constraints,
+    /regenerate) now pass user_id=user_id — before, they had user_id
+    available via Depends(get_user_id) but never forwarded it to the
+    agent, so a planning could be built from every user's data mixed
+    together. Fixed below.
 """
 
 import io, os, uuid, traceback
@@ -397,7 +406,10 @@ def run_planning(
     user_id: str     = Depends(get_user_id),
 ):
     try:
-        result = PlanningAgent(db=db).run(extra_constraints=body.user_constraints or "")
+        # ← FIXED: user_id is now forwarded to PlanningAgent, which requires
+        #   it and uses it to load ONLY this user's own data (see
+        #   agents/planning_agent.py — _load_data_from_db / _load_constraints_from_db).
+        result = PlanningAgent(db=db, user_id=user_id).run(extra_constraints=body.user_constraints or "")
         if not result.success:
             raise HTTPException(422, detail=result.error)
         return _build_response(result, db, user_id)
@@ -414,7 +426,7 @@ def run_with_constraints(
     user_id: str     = Depends(get_user_id),
 ):
     try:
-        result = PlanningAgent(db=db).run(constraints_dict=body.constraints_dict)
+        result = PlanningAgent(db=db, user_id=user_id).run(constraints_dict=body.constraints_dict)
         if not result.success:
             raise HTTPException(422, detail=result.error)
         return _build_response(result, db, user_id)
@@ -431,7 +443,7 @@ def regenerate_planning(
     user_id: str     = Depends(get_user_id),
 ):
     try:
-        result = PlanningAgent(db=db).regenerate(
+        result = PlanningAgent(db=db, user_id=user_id).regenerate(
             constraints_dict  = body.constraints_dict,
             extra_constraints = body.user_constraints,
             attempt           = body.attempt,
