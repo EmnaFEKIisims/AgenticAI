@@ -1,7 +1,16 @@
 """
-repositories/notification_repository.py
+repositories/notification_repository.py  (Services/Notification/notification_repository.py)
 =========================================
 DB operations for Notification model.
+
+← CHANGED: every `admin_id: int | None` parameter is replaced with
+  `user_id: str | None`, matching the new FK on models.notification.
+  This is the ONLY place that reads/writes notification state now --
+  Services/AnomalyAgent/notification_service.py no longer duplicates
+  mark_as_read / mark_all_read / get_unread (see that file's docstring).
+
+  Added delete_by_user() -- wipes a user's old notifications right
+  before their new planning version's notifications are created.
 """
 
 from datetime import datetime, timezone
@@ -15,16 +24,16 @@ class NotificationRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def get_all(self, admin_id: int | None = None, limit: int = 100) -> list[Notification]:
+    def get_all(self, user_id: str | None = None, limit: int = 100) -> list[Notification]:
         q = self.db.query(Notification)
-        if admin_id:
-            q = q.filter(Notification.admin_id == admin_id)
+        if user_id:
+            q = q.filter(Notification.user_id == user_id)
         return q.order_by(Notification.created_at.desc()).limit(limit).all()
 
-    def get_unread(self, admin_id: int | None = None) -> list[Notification]:
+    def get_unread(self, user_id: str | None = None) -> list[Notification]:
         q = self.db.query(Notification).filter(Notification.is_read == False)
-        if admin_id:
-            q = q.filter(Notification.admin_id == admin_id)
+        if user_id:
+            q = q.filter(Notification.user_id == user_id)
         return q.order_by(Notification.created_at.desc()).all()
 
     def get_by_id(self, notification_id: int) -> Notification | None:
@@ -41,10 +50,10 @@ class NotificationRepository:
         self.db.refresh(notif)
         return notif
 
-    def mark_all_read(self, admin_id: int | None = None) -> int:
+    def mark_all_read(self, user_id: str | None = None) -> int:
         q = self.db.query(Notification).filter(Notification.is_read == False)
-        if admin_id:
-            q = q.filter(Notification.admin_id == admin_id)
+        if user_id:
+            q = q.filter(Notification.user_id == user_id)
         count = q.count()
         q.update({
             "is_read": True,
@@ -62,14 +71,28 @@ class NotificationRepository:
         self.db.commit()
         return True
 
-    def count_unread(self, admin_id: int | None = None) -> int:
+    def delete_by_user(self, user_id: str) -> int:
+        """
+        Deletes EVERY notification currently owned by this user.
+
+        Called right before AnomalyAgent creates notifications for a
+        freshly (re)generated planning, so the notification bell only
+        ever shows the CURRENT planning version's alerts -- never a
+        stale set left over from a previous generation, regeneration,
+        or drag-and-drop modification.
+        """
+        n = self.db.query(Notification).filter(Notification.user_id == user_id).delete()
+        self.db.commit()
+        return n
+
+    def count_unread(self, user_id: str | None = None) -> int:
         q = self.db.query(Notification).filter(Notification.is_read == False)
-        if admin_id:
-            q = q.filter(Notification.admin_id == admin_id)
+        if user_id:
+            q = q.filter(Notification.user_id == user_id)
         return q.count()
 
-    def summary(self, admin_id: int | None = None) -> dict:
-        all_notifs = self.get_all(admin_id=admin_id)
+    def summary(self, user_id: str | None = None) -> dict:
+        all_notifs = self.get_all(user_id=user_id, limit=10_000)
         return {
             "total":   len(all_notifs),
             "unread":  sum(1 for n in all_notifs if not n.is_read),

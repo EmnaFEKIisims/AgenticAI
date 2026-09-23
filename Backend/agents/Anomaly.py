@@ -3,8 +3,27 @@ agents/Anomaly.py
 ================================
 Main Anomaly Agent — orchestrates the full pipeline.
 
+← CHANGED (real per-user notifications, milestone fix):
+  - analyze() now takes `user_id: str` (the session user who owns this
+    planning) and an optional `planning_group_id: str` (the planning
+    VERSION being analyzed).
+  - Step 0 (NEW): before anything else, wipes this user's previous
+    anomalies AND notifications. This is what makes the requirement
+    hold: "0 notifications on connect, N notifications after a
+    generation, N automatically replaced by N' after a regeneration /
+    modification / new generation" -- every analyze() run for a user
+    starts by clearing that user's old state, so stale anomalies from a
+    previous planning version can never linger.
+  - Every AnomalyCreate and every notify_many() call is now stamped
+    with user_id + planning_group_id, so anomalies/notifications are a
+    real, queryable per-user relation instead of a global unscoped
+    table.
+
 Flow:
-  analyze(planning_id, schedule)
+  analyze(user_id, planning_id, planning_group_id, schedule)
+        │
+        ▼
+    [Clear]            wipe this user's previous anomalies + notifications   ← NEW
         │
         ▼
     [Detector]         detect_all() → raw anomaly dicts
@@ -13,13 +32,13 @@ Flow:
     [Classifier]       classify_all() → typed + severity + ISO ref
         │
         ▼
-    [DB Save]          AnomalyRepository.create_many()
+    [DB Save]          AnomalyRepository.create_many()  (stamped with user_id)
         │
         ▼
     [Resolver]         resolve_all() → list of Resolution per anomaly
         │
         ▼
-    [Notification]     notify_many() → Notification rows in DB
+    [Notification]     notify_many() → Notification rows in DB (stamped with user_id)
         │
         ▼
     AnomalyAgentResult (anomalies + resolutions + notifications)
@@ -28,13 +47,13 @@ Flow:
 from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 
-from Services.AnomalyAgent.detector            import detect_all
-from Services.AnomalyAgent.classifier          import classify_all
-from Services.AnomalyAgent.resolver            import resolve_all, Resolution
-from Services.AnomalyAgent.notification_service import notify_many
-from Services.AnomalyAgent.Repositories.anomaly_repository           import AnomalyRepository
-from Services.AnomalyAgent.Schemas.anomaly                            import AnomalyCreate
-from models.anomaly                             import AnomalyType, AnomalySeverity
+from Services.AnomalyAgent.detector             import detect_all
+from Services.AnomalyAgent.classifier           import classify_all
+from Services.AnomalyAgent.resolver             import resolve_all, Resolution
+from Services.AnomalyAgent.notification_service import notify_many, clear_previous_notifications
+from Services.AnomalyAgent.Repositories.anomaly_repository import AnomalyRepository
+from Services.AnomalyAgent.Schemas.anomaly                 import AnomalyCreate
+from models.anomaly                              import AnomalyType, AnomalySeverity
 
 
 # =============================================================================
@@ -48,9 +67,9 @@ class AnomalyAgentResult:
     high_count:        int
     medium_count:      int
     low_count:         int
-    anomalies:         list[dict]              # classified anomaly dicts
+    anomalies:         list[dict]                  # classified anomaly dicts
     resolutions:       dict[int, list[Resolution]]  # index → proposals
-    notification_ids:  list[int]              # IDs of created notifications
+    notification_ids:  list[int]                    # IDs of created notifications
     error:             str = ""
 
     @property
@@ -72,15 +91,17 @@ class AnomalyAgentResult:
 
 class AnomalyAgent:
     """
-    Orchestrates: Detector → Classifier → DB → Resolver → Notifications.
+    Orchestrates: Clear-old → Detector → Classifier → DB → Resolver → Notifications.
 
-    Usage (from PlanningRouter or Orchestrator):
+    Usage (from AnomalyRouter or Orchestrator):
         agent  = AnomalyAgent(db=db)
         result = agent.analyze(
-            schedule    = planning_result.schedule,
-            planning_id = 1,
-            groups      = groups_data,
-            rooms       = rooms_data,
+            schedule          = planning_result.schedule,
+            user_id           = current_user_id,        # REQUIRED — session user
+            planning_id       = 1,
+            planning_group_id = "uuid-of-this-version",  # optional but recommended
+            groups            = groups_data,
+            rooms             = rooms_data,
         )
         print(result.summary)
         print(result.resolutions[0])   # proposals for first anomaly
@@ -92,30 +113,52 @@ class AnomalyAgent:
 
     def analyze(
         self,
-        schedule:       list[dict],
-        planning_id:    int         = None,
-        groups:         list[dict]  = None,
-        rooms:          list[dict]  = None,
-        equipment_data: list[dict]  = None,
-        forbidden_days: list[str]   = None,
-        admin_id:       int         = None,
+        schedule:          list[dict],
+        user_id:            str,
+        planning_id:        int         = None,
+        planning_group_id:  str         = None,
+        groups:             list[dict]  = None,
+        rooms:               list[dict]  = None,
+        equipment_data:       list[dict]  = None,
+        forbidden_days:        list[str]   = None,
     ) -> AnomalyAgentResult:
         """
-        Full anomaly detection pipeline.
+        Full anomaly detection pipeline, scoped to ONE user's planning.
 
         Args:
-            schedule:       sessions from PlanningAgent.run().schedule
-            planning_id:    DB planning id
-            groups:         group data for capacity checks
-            rooms:          room data for capacity checks
-            equipment_data: equipment data for conflict checks
-            forbidden_days: days where no session is allowed
-            admin_id:       admin to notify (None = broadcast)
+            schedule:           sessions from PlanningAgent.run().schedule
+            user_id:             REQUIRED — the session user who owns this planning.
+                                  Every anomaly/notification created is stamped with
+                                  this id, and this user's PREVIOUS anomalies/
+                                  notifications are wiped before the new ones are
+                                  saved (see Step 0 below).
+            planning_id:         DB planning id (legacy field, kept for compatibility)
+            planning_group_id:   UUID of the planning VERSION being analyzed
+                                  (ScheduleSlot.planning_group_id)
+            groups:               group data for capacity checks
+            rooms:                 room data for capacity checks
+            equipment_data:         equipment data for conflict checks
+            forbidden_days:          days where no session is allowed
         """
         print(f"\n{'='*60}")
         print(f"  ANOMALY AGENT")
+        print(f"  User     : {user_id}")
         print(f"  Sessions : {len(schedule)}")
         print(f"{'='*60}")
+
+        # ── Step 0: Clear this user's PREVIOUS anomalies + notifications ──────
+        # This is the core of the "new version replaces old" requirement:
+        # every analyze() call (fresh generation, regeneration, or a HITL
+        # modification that re-triggers analysis) starts from a clean slate
+        # for this user, so old alerts never linger next to new ones.
+        print("\n[0/4] Clearing previous anomalies/notifications for this user...")
+        if user_id:
+            cleared_anomalies = self.repo.delete_by_user(user_id)
+            clear_previous_notifications(self.db, user_id)
+            print(f"  → {cleared_anomalies} old anomaly(ies) cleared.")
+        else:
+            print("  ⚠️  No user_id provided — skipping per-user cleanup "
+                  "(anomalies will NOT be scoped to a user).")
 
         # ── Step 1: Detect ────────────────────────────────────────────────────
         print("\n[1/4] Running detector...")
@@ -150,15 +193,17 @@ class AnomalyAgent:
         for anomaly in classified:
             try:
                 create_data = AnomalyCreate(
-                    planning_id    = anomaly.get("planning_id"),
-                    anomaly_type   = anomaly.get("anomaly_type", AnomalyType.OTHER),
-                    severity       = anomaly.get("severity",     AnomalySeverity.MEDIUM),
-                    title          = anomaly.get("title", "Anomaly"),
-                    description    = anomaly.get("description"),
-                    details        = anomaly.get("details"),
-                    impact         = anomaly.get("impact"),
-                    recommendation = anomaly.get("recommendation"),
-                    iso_reference  = anomaly.get("iso_reference"),
+                    user_id            = user_id,
+                    planning_group_id  = planning_group_id,
+                    planning_id        = anomaly.get("planning_id"),
+                    anomaly_type       = anomaly.get("anomaly_type", AnomalyType.OTHER),
+                    severity           = anomaly.get("severity",     AnomalySeverity.MEDIUM),
+                    title              = anomaly.get("title", "Anomaly"),
+                    description        = anomaly.get("description"),
+                    details            = anomaly.get("details"),
+                    impact             = anomaly.get("impact"),
+                    recommendation     = anomaly.get("recommendation"),
+                    iso_reference      = anomaly.get("iso_reference"),
                 )
                 saved = self.repo.create(create_data)
                 saved_ids.append(saved.id)
@@ -171,10 +216,11 @@ class AnomalyAgent:
         # ── Step 4: Notify ────────────────────────────────────────────────────
         print("\n[4/4] Creating notifications...")
         notifications = notify_many(
-            anomalies   = classified,
-            db          = self.db,
-            admin_id    = admin_id,
-            anomaly_ids = [i for i in saved_ids if i is not None],
+            anomalies         = classified,
+            db                = self.db,
+            user_id           = user_id,
+            planning_group_id = planning_group_id,
+            anomaly_ids       = [i for i in saved_ids if i is not None],
         )
         notif_ids = [n.id for n in notifications]
 
@@ -193,8 +239,12 @@ class AnomalyAgent:
         return result
 
     def get_open_anomalies(self) -> list:
-        """Returns all OPEN anomalies from DB."""
+        """Returns all OPEN anomalies from DB (all users)."""
         return self.repo.get_open()
+
+    def get_anomalies_for_user(self, user_id: str) -> list:
+        """Returns all anomalies belonging to this user's current planning."""
+        return self.repo.get_by_user(user_id)
 
     def resolve_anomaly(self, anomaly_id: int, status: str):
         """Updates anomaly status — called after admin takes action."""

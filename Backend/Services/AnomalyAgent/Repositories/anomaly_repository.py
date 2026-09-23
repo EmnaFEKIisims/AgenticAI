@@ -5,12 +5,17 @@ All DB operations for the Anomaly model.
 No business logic here — only DB read/write.
 
 Functions:
-  create         → insert a new anomaly
-  get            → get one anomaly by id
-  get_by_planning → all anomalies for a planning
-  get_open       → all OPEN anomalies
-  update_status  → change status (acknowledge / resolve / ignore)
-  delete         → remove an anomaly
+  create          → insert a new anomaly
+  create_many      → insert several
+  get              → get one anomaly by id
+  get_by_planning  → all anomalies for a planning
+  get_by_user      → all anomalies belonging to a user           ← NEW
+  get_open         → all OPEN anomalies
+  update_status    → change status (acknowledge / resolve / ignore)
+  delete           → remove an anomaly
+  delete_by_user   → wipe ALL anomalies for a user                ← NEW
+                      (called before saving a fresh planning
+                      version's anomalies -- see agents/Anomaly.py)
 """
 
 from datetime import datetime, timezone
@@ -52,6 +57,18 @@ class AnomalyRepository:
             self.db.query(Anomaly)
             .filter(Anomaly.planning_id == planning_id)
             .order_by(Anomaly.detected_at.desc())
+            .all()
+        )
+
+    def get_by_user(self, user_id: str, limit: int = 200) -> list[Anomaly]:
+        """Returns all anomalies belonging to this user (current planning
+        version), newest first. This is what the frontend's mini
+        notification interface reads for the logged-in session user."""
+        return (
+            self.db.query(Anomaly)
+            .filter(Anomaly.user_id == user_id)
+            .order_by(Anomaly.detected_at.desc())
+            .limit(limit)
             .all()
         )
 
@@ -122,3 +139,16 @@ class AnomalyRepository:
         self.db.commit()
         return n
 
+    def delete_by_user(self, user_id: str) -> int:
+        """
+        Deletes EVERY anomaly currently owned by this user.
+
+        Called at the start of AnomalyAgent.analyze() -- every new
+        planning generation / regeneration / modification wipes the
+        previous version's anomalies for that user before inserting the
+        new ones, so a user only ever sees anomalies for their CURRENT
+        planning, never a stale one.
+        """
+        n = self.db.query(Anomaly).filter(Anomaly.user_id == user_id).delete()
+        self.db.commit()
+        return n
