@@ -19,9 +19,9 @@ function pickColor(title: string) {
 
 interface DraggableScheduleSlotProps {
   session:     SessionSlotOut;
-  isDragging:  boolean;
-  onDragStart: (e: React.DragEvent, session: SessionSlotOut) => void;
-  onDragEnd:   () => void;
+  isDragging?:  boolean;
+  onDragStart?: (e: React.DragEvent, session: SessionSlotOut) => void;
+  onDragEnd?:   () => void;
 }
 
 export default function DraggableScheduleSlot({
@@ -29,9 +29,9 @@ export default function DraggableScheduleSlot({
 }: DraggableScheduleSlotProps) {
   return (
     <div
-      draggable
-      onDragStart={e => onDragStart(e, session)}
-      onDragEnd={onDragEnd}
+      draggable={Boolean(onDragStart)}
+      onDragStart={e => onDragStart?.(e, session)}
+      onDragEnd={() => onDragEnd?.()}
       className={`cursor-grab active:cursor-grabbing select-none rounded-xl border p-2.5 transition-all ${pickColor(session.course_title)} ${
         isDragging ? "opacity-40 scale-95 shadow-none" : "hover:shadow-md hover:scale-[1.02]"
       }`}

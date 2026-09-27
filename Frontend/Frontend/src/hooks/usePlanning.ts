@@ -22,7 +22,6 @@ import type {
   SessionSlot,
   Constraints,
 } from "../types/planning";
-import { normalizeDayLabel } from "../utils/planningHelpers";
 import {
   runPlanning,
   getSchedule,
@@ -48,7 +47,6 @@ interface UsePlanningReturn {
   canValidate:    boolean;
   canExport:      boolean;
   isLoading:      boolean;
-  sessionsByDay:  Record<string, SessionSlot[]>;   // grouped for calendar view
   sessionsByCourse: Record<string, SessionSlot[]>; // grouped for course view
 
   // ── Actions ────────────────────────────────────────────────────────────────
@@ -116,17 +114,6 @@ export function usePlanning(): UsePlanningReturn {
   const canValidate = state.status === "success" && hasSchedule && !state.validated;
   const canExport   = hasSchedule && (state.status === "success" || state.status === "validated");
   const isLoading   = state.status === "loading";
-
-  // Group sessions by day  → used by a calendar/day-view component
-  const sessionsByDay: Record<string, SessionSlot[]> =
-    hasSchedule
-      ? state.schedule.reduce((acc, session) => {
-          const day = normalizeDayLabel(session.suggested_day);
-          if (!acc[day]) acc[day] = [];
-          acc[day].push(session);
-          return acc;
-        }, {} as Record<string, SessionSlot[]>)
-      : {};
 
   // Group sessions by course → used by a course-breakdown component
   const sessionsByCourse: Record<string, SessionSlot[]> =
@@ -303,7 +290,6 @@ export function usePlanning(): UsePlanningReturn {
     canValidate,
     canExport,
     isLoading,
-    sessionsByDay,
     sessionsByCourse,
 
     // Actions

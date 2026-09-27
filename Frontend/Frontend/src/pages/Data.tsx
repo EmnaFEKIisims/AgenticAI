@@ -1,7 +1,5 @@
 // src/pages/DataPage.tsx
 import React, { useState, useCallback } from 'react';
-import { ArrowLeft } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
 import { 
   UploadResponse, 
   PreviewResponse, 
@@ -16,8 +14,6 @@ import DataActions from '../components/data/DataActions';
 import DataStatus from '../components/data/DataStatus';
 
 const DataPage: React.FC = () => {
-  const navigate = useNavigate();
-
   // ====================== STATE ======================
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadId, setUploadId] = useState<string | null>(null);
@@ -147,26 +143,36 @@ const DataPage: React.FC = () => {
 
   // ====================== RENDER ======================
   return (
-    <div className="max-w-7xl mx-auto p-6 space-y-8">
-      <div>
-        <button
-          type="button"
-          onClick={() => navigate('/')}
-          className="inline-flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 transition"
-          aria-label="Back to home"
-        >
-          <ArrowLeft size={18} aria-hidden="true" />
-          <span>Back to home</span>
-        </button>
+    <div className="data-page">
+      <div className="data-shell">
+      <div className="data-breadcrumb-row">
+        <span className="data-breadcrumb-label">Data agent / Import center</span>
       </div>
 
-      <div className="text-center mb-10">
-        <h1 className="text-4xl font-bold text-gray-900 mb-2">
-          Data Manager
-        </h1>
-        <p className="text-gray-600 text-lg">
-          Upload • Extract • Validate • Import your training data
-        </p>
+      <div className="data-hero">
+        <div className="data-hero-copy">
+          <span className="data-eyebrow"><span className="data-eyebrow-dot" /> Data operations</span>
+          <h1>Bring your training data into focus.</h1>
+          <p>Upload a source file, inspect the extracted records, and approve a clean import into your learning system.</p>
+          <div className="data-hero-meta">
+            <span><strong>01</strong> Upload</span>
+            <span><strong>02</strong> Inspect</span>
+            <span><strong>03</strong> Approve</span>
+          </div>
+        </div>
+        <div className="data-pipeline-card" aria-label="Import pipeline">
+          <div className="data-pipeline-heading">
+            <span>Import pipeline</span>
+            <span className="data-live-status"><span /> Ready</span>
+          </div>
+          <div className="data-pipeline-line" />
+          <div className="data-pipeline-steps">
+            <div><span className="data-pipeline-number data-pipeline-number-active">01</span><small>Source</small></div>
+            <div><span className="data-pipeline-number">02</span><small>Preview</small></div>
+            <div><span className="data-pipeline-number">03</span><small>Database</small></div>
+          </div>
+          <p>Every import stays reviewable before it reaches your database.</p>
+        </div>
       </div>
 
       {/* Status Banner */}
@@ -210,21 +216,25 @@ const DataPage: React.FC = () => {
 
       {/* Success Message after validation */}
       {status === 'validated' && (
-        <div className="bg-green-50 border border-green-200 rounded-xl p-8 text-center">
-          <h2 className="text-2xl font-semibold text-green-800 mb-2">
-            🎉 Import Completed Successfully
+        <div className="data-success-panel">
+          <div className="data-success-mark">✓</div>
+          <div>
+          <h2>
+            Import completed successfully
           </h2>
-          <p className="text-green-700 mb-6">
+          <p>
             Your data has been inserted into the database.
           </p>
+          </div>
           <button
             onClick={handleReset}
-            className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+            className="data-success-button"
           >
             Start New Import
           </button>
         </div>
       )}
+      </div>
     </div>
   );
 };

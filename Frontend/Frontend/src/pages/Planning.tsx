@@ -5,7 +5,6 @@ import { usePlanning }                      from "../hooks/usePlanning";
 // ── Existing view components ─────────────────────────────────────────────────
 import PlanningTable        from "../components/planning/PlanningTable";
 import GroupedPlanningView  from "../components/planning/GroupedPlanningView";
-import CalendarGridView     from "../components/planning/CalendarGridView";
 
 // ── NEW: HITL + DnD components ───────────────────────────────────────────────
 import ValidationActions    from "../components/planning/ValidationActions";
@@ -27,13 +26,14 @@ import type { HITLStatus }     from "../types/planningValidation";
 import NotificationBell        from "../components/notifications/NotificationBell";
 
 import {
-  CalendarDays, Check, CircleAlert, Download, GraduationCap,
+  Check, CircleAlert, Download, GraduationCap,
   LayoutGrid, Loader2, Pin, RefreshCw, Sparkles, Users,
-  Filter, MoreHorizontal, Search, TrendingUp, ClipboardCheck,
+  MoreHorizontal, Search, TrendingUp, ClipboardCheck,
   Move, XCircle, Settings2,
+  UserRound,
 } from "lucide-react";
 
-type PlanningViewMode = "global" | "group" | "trainer" | "calendar" | "dnd";
+type PlanningViewMode = "global" | "group" | "trainer" | "dnd";
 
 // ── ADDED: base URL used elsewhere in the app's services. If your services
 //   use an axios instance with its own baseURL, replace this fetch call with
@@ -59,7 +59,7 @@ async function fetchLastState(): Promise<{
 export default function PlanningPage() {
 
   // ── Existing state ──────────────────────────────────────────────────────────
-  const [mode,          setMode]          = useState<PlanningViewMode>("calendar");
+  const [mode,          setMode]          = useState<PlanningViewMode>("global");
   const [showReasoning, setShowReasoning] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -80,7 +80,7 @@ export default function PlanningPage() {
   // ── Existing hook ────────────────────────────────────────────────────────────
   const {
     state, isExporting, hasSchedule,
-    canExport, isLoading, sessionsByDay, sessionsByCourse,
+    canExport, isLoading, sessionsByCourse,
     handleExport, handleRefresh, handleReset, hydrateSchedule,
   } = usePlanning();
 
@@ -238,7 +238,7 @@ export default function PlanningPage() {
 
   // ── Stats ────────────────────────────────────────────────────────────────────
   const totalSessions = state.schedule.length;
-  const totalDays     = Object.keys(sessionsByDay).length;
+  const totalDays     = new Set(state.schedule.map((session) => session.suggested_day)).size;
   const totalCourses  = Object.keys(sessionsByCourse).length;
   const totalWeeks    = localSchedule.length > 0
     ? Math.max(...localSchedule.map(s => parseInt(s.suggested_day?.match(/Week\s+(\d+)/i)?.[1] ?? "1")))
@@ -257,17 +257,6 @@ export default function PlanningPage() {
       session.suggested_time,
     ].some((value) => String(value ?? "").toLowerCase().includes(query)));
   }, [searchQuery, state.schedule]);
-
-  const filteredSessionsByDay = useMemo(() => {
-    if (!searchQuery.trim()) return sessionsByDay;
-
-    return filteredSchedule.reduce<Record<string, SessionSlot[]>>((days, session) => {
-      const day = session.suggested_day;
-      if (!days[day]) days[day] = [];
-      days[day].push(session);
-      return days;
-    }, {});
-  }, [filteredSchedule, searchQuery, sessionsByDay]);
 
   // =============================================================================
   //  HITL Handlers — use planningManagementService (correct endpoints)
@@ -474,9 +463,9 @@ export default function PlanningPage() {
               <div className="flex items-center gap-2">
                 <div className="h-8 w-px bg-gray-200" />
                 <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-                  {(["calendar","global","group","trainer"] as const).map(v => {
-                    const icons  = { calendar: <CalendarDays className="w-4 h-4" />, global: <LayoutGrid className="w-4 h-4" />, group: <Users className="w-4 h-4" />, trainer: <GraduationCap className="w-4 h-4" /> };
-                    const labels = { calendar: "Calendar", global: "Timeline", group: "Groups", trainer: "Trainers" };
+                  {(["global","group","trainer"] as const).map(v => {
+                    const icons  = { global: <LayoutGrid className="w-4 h-4" />, group: <Users className="w-4 h-4" />, trainer: <GraduationCap className="w-4 h-4" /> };
+                    const labels = { global: "Timeline", group: "Groups", trainer: "Trainers" };
                     return (
                       <button key={v} onClick={() => setMode(v)}
                         className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${mode === v ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}>
@@ -496,28 +485,29 @@ export default function PlanningPage() {
           <div className="flex items-center gap-3">
             {hasSchedule && (
               <>
-                {isSearchOpen && (
-                  <input
-                    autoFocus
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    placeholder="Search schedule..."
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsSearchOpen((open) => !open)}
+                    className={`p-2 rounded-lg ${isSearchOpen ? "bg-blue-50" : "hover:bg-gray-100"}`}
                     aria-label="Search schedule"
-                    className="w-48 rounded-lg border border-gray-200 px-3 py-1.5 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                  />
-                )}
-                <button
-                  type="button"
-                  onClick={() => setIsSearchOpen((open) => !open)}
-                  className={`p-2 rounded-lg ${isSearchOpen ? "bg-blue-50" : "hover:bg-gray-100"}`}
-                  aria-label="Search schedule"
-                  title="Search schedule"
-                >
-                  <Search className="w-4 h-4 text-gray-600" />
-                </button>
-                <button type="button" className="p-2 hover:bg-gray-100 rounded-lg" aria-label="Filter schedule" title="Filter schedule">
-                  <Filter className="w-4 h-4 text-gray-600" />
-                </button>
+                    title="Search schedule"
+                  >
+                    <Search className="w-4 h-4 text-gray-600" />
+                  </button>
+                  {isSearchOpen && (
+                    <div className="absolute right-0 top-full z-50 mt-2 rounded-xl border border-gray-200 bg-white p-2 shadow-lg">
+                      <input
+                        autoFocus
+                        value={searchQuery}
+                        onChange={(event) => setSearchQuery(event.target.value)}
+                        placeholder="Search schedule..."
+                        aria-label="Search schedule"
+                        className="w-64 rounded-lg border border-gray-200 px-3 py-2 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                      />
+                    </div>
+                  )}
+                </div>
                 <NotificationBell />
                 <div className="h-8 w-px bg-gray-200" />
               </>
@@ -529,6 +519,15 @@ export default function PlanningPage() {
             <button onClick={() => navigate("/anomaly")}
               className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-100">
               <CircleAlert className="w-4 h-4" />Anomaly report
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate("/user")}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              aria-label="Open user profile"
+              title="User profile"
+            >
+              <UserRound className="w-4 h-4" />User
             </button>
           </div>
         </div>
@@ -665,7 +664,6 @@ export default function PlanningPage() {
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               <div className="p-6 border-b border-gray-200 flex items-center justify-between">
                 <h3 className="font-semibold text-gray-900">
-                  {mode === "calendar" && "Calendar Grid View"}
                   {mode === "global"   && "Training Schedule Timeline"}
                   {mode === "group"    && "Schedule by Groups"}
                   {mode === "trainer"  && "Schedule by Trainers"}
@@ -677,7 +675,7 @@ export default function PlanningPage() {
                       ⠿ Drag sessions to move
                     </span>
                   )}
-                  {mode !== "calendar" && mode !== "dnd" && (
+                  {mode !== "dnd" && (
                     <button onClick={() => setShowReasoning(!showReasoning)}
                       className={`px-3 py-1.5 text-xs font-medium rounded-lg flex items-center gap-2 ${showReasoning ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-600"}`}>
                       {showReasoning ? "Hide" : "Show"} Reasoning
@@ -690,7 +688,6 @@ export default function PlanningPage() {
               </div>
 
               <div className="overflow-x-auto">
-                {mode === "calendar" && <CalendarGridView sessionsByDay={filteredSessionsByDay} />}
                 {mode === "global"   && <PlanningTable schedule={filteredSchedule} mode="global" showReasoning={showReasoning} />}
                 {(mode === "group" || mode === "trainer") && <GroupedPlanningView schedule={filteredSchedule} mode={mode} showReasoning={showReasoning} />}
                 {mode === "dnd" && localSchedule.length > 0 && (

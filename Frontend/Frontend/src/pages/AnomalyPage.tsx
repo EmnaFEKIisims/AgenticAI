@@ -12,6 +12,7 @@
 // pages/anomaly/.
 
 import { useEffect }    from "react";
+import { SearchCheck } from "lucide-react";
 import { useAnomalies } from "../hooks/useAnomalies";
 import AnomalyHeader from "../components/Anomaly/AnomalyHeader";
 import AnomalySummary   from "../components/Anomaly/AnomalySummary";
@@ -50,11 +51,13 @@ export default function AnomalyPage() {
     <div className="min-h-screen bg-slate-50">
 
       {/* Top bar */}
-      <div className="border-b border-slate-200 bg-white px-6 py-4">
-        <div className="mx-auto max-w-6xl flex items-center gap-3">
-          <span className="text-2xl">🔍</span>
-          <div>
-            <h1 className="text-lg font-bold text-slate-900">Anomaly Agent</h1>
+      <div className="border-b border-slate-200 bg-white/90 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-6xl items-center gap-4 px-6 py-4">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-sky-100 bg-sky-50 text-sky-700 shadow-sm">
+            <SearchCheck className="h-5 w-5" aria-hidden="true" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-lg font-semibold tracking-tight text-slate-900">Anomaly Agent</h1>
             <p className="text-xs text-slate-500">Detect · Classify · Resolve</p>
           </div>
         </div>

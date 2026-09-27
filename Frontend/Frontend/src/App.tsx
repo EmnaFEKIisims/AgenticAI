@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Moon, Sun, UserRound } from 'lucide-react'
+import { ArrowLeft, Moon, Sun } from 'lucide-react'
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import DataPage from './pages/Data.js'
 import ConstraintPage from './pages/Constraint.js'
@@ -33,10 +33,6 @@ function App() {
   const nextThemeLabel =
     theme === 'cupcake' ? 'Passer en mode sombre' : 'Retour en mode clair'
 
-  const goToUserPage = () => {
-    navigate('/user')
-  }
-
   const isStartPage = location.pathname === '/'
 
   return (
@@ -67,16 +63,6 @@ function App() {
             )}
           </button>
         </div>
-
-        <button
-          type="button"
-          onClick={goToUserPage}
-          className="icon-top-btn user-top-btn"
-          aria-label="Open user profile"
-          title="User profile"
-        >
-          <UserRound className="theme-icon" strokeWidth={2.25} aria-hidden="true" />
-        </button>
 
       </div>
 
