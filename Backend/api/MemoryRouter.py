@@ -10,6 +10,13 @@ Endpoints:
   DELETE /memories/{id}         → delete one memory
   DELETE /memories              → clear all user memories
   POST   /memories/feedback     → store explicit feedback
+
+FIX: `m.memory_type.value` crashed with `AttributeError: 'str' object has
+no attribute 'value'` — the `memory_type` column on your Memory model
+returns a plain Python str at the ORM level (not an Enum member), so
+calling `.value` on it fails. Replaced with a small helper that works
+whether memory_type comes back as a str OR an Enum member, so it's safe
+either way and doesn't depend on how the column happens to be typed.
 """
 
 import traceback
@@ -33,6 +40,12 @@ def get_db():
         db.close()
 
 
+def _type_str(memory_type) -> str:
+    """memory_type may come back as a str or an Enum member depending on
+    how the column is mapped — handle both without crashing."""
+    return memory_type.value if hasattr(memory_type, "value") else memory_type
+
+
 @router.get("")
 def list_memories(
     user_id:     str,
@@ -51,7 +64,7 @@ def list_memories(
                 {
                     "id":          m.id,
                     "content":     m.content,
-                    "type":        m.memory_type.value,
+                    "type":        _type_str(m.memory_type),
                     "importance":  m.importance,
                     "confidence":  m.confidence,
                     "planning_id": m.planning_id,
@@ -85,7 +98,7 @@ def get_memory(memory_id: int, db: Session = Depends(get_db)):
         return {
             "id":         mem.id,
             "content":    mem.content,
-            "type":       mem.memory_type.value,
+            "type":       _type_str(mem.memory_type),
             "importance": mem.importance,
             "created_at": mem.created_at.isoformat() if mem.created_at else None,
         }
