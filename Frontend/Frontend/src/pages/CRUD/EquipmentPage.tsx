@@ -1,12 +1,15 @@
 // src/pages/admin/EquipmentPage.tsx
 import { useState } from "react";
+import { Wrench } from "lucide-react";
 import { useCrud } from "../../hooks/useCrud";
 import { getEquipments, createEquipment, updateEquipment, deleteEquipment } from "../../services/crudServices";
 import DataTable, { Column } from "../../components/crud/DataTable";
 import SearchBar              from "../../components/crud/SearchBar";
 import FormModal              from "../../components/crud/FormModal";
 import DeleteDialog           from "../../components/crud/DeleteDialog";
-import { EmptyState, LoadingState, Pagination } from "../../components/crud/EmptyState";
+import { EmptyState } from "../../components/crud/EmptyState";
+import { LoadingState } from "../../components/crud/LoadingState";
+import { Pagination } from "../../components/crud/Pagination";
 import { AdminPageLayout, Field, ModalFooter, inputCls } from "./RoomsPage";
 import type { Equipment } from "../../types/crud_types";
 
@@ -39,7 +42,7 @@ export default function EquipmentPage() {
   ];
 
   return (
-    <AdminPageLayout title="Equipment" icon="🔧" total={crud.items.length}
+    <AdminPageLayout title="Equipment" icon={<Wrench className="h-7 w-7 text-slate-700" aria-hidden="true" />} total={crud.items.length}
       onAdd={openAdd} error={crud.error}
       search={<SearchBar value={crud.search} onChange={crud.setSearch} placeholder="Search equipment..." />}>
       {crud.isLoading && <LoadingState />}

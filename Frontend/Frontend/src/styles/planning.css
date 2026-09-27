@@ -380,15 +380,19 @@
 
 .planning-grouped-view {
   display: grid;
-  gap: 18px;
+  gap: 24px;
+  padding: 24px;
+  background: hsl(var(--b1) / 0.7);
 }
 
 .planning-entity-card {
+  width: 100%;
+  margin: 0;
   background: linear-gradient(180deg, hsl(var(--b2)) 0%, hsl(var(--b1)) 100%);
-  border: 1px solid hsl(var(--bc) / 0.12);
+  border: 2px solid hsl(var(--bc) / 0.22);
   border-radius: 16px;
   padding: 16px;
-  box-shadow: 0 14px 30px hsl(var(--bc) / 0.05);
+  box-shadow: 0 10px 24px hsl(var(--bc) / 0.1);
 }
 
 .planning-entity-header {

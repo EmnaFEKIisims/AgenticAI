@@ -1,5 +1,6 @@
 // src/pages/admin/RoomsPage.tsx
 import { useState } from "react";
+import { AlertTriangle, Building2, Plus } from "lucide-react";
 import { useCrud }     from "../../hooks/useCrud";
 import { getRooms, createRoom, updateRoom, deleteRoom } from "../../services/crudServices";
 import DataTable, { Column } from "../../components/crud/DataTable";
@@ -7,8 +8,8 @@ import SearchBar              from "../../components/crud/SearchBar";
 import FormModal              from "../../components/crud/FormModal";
 import DeleteDialog           from "../../components/crud/DeleteDialog";
 import { EmptyState }         from "../../components/crud/EmptyState";
-import { LoadingState }       from "../../components/crud/EmptyState";
-import { Pagination }         from "../../components/crud/EmptyState";
+import { LoadingState }       from "../../components/crud/LoadingState";
+import { Pagination }         from "../../components/crud/Pagination";
 import type { Room }          from "../../types/crud_types";
 import { useNavigate } from "react-router-dom";
 
@@ -51,7 +52,7 @@ export default function RoomsPage() {
   ];
 
   return (
-    <AdminPageLayout title="Rooms" icon="🏫" total={crud.items.length}
+    <AdminPageLayout title="Rooms" icon={<Building2 className="h-7 w-7 text-slate-700" aria-hidden="true" />} total={crud.items.length}
       onAdd={openAdd} error={crud.error}
       search={<SearchBar value={crud.search} onChange={crud.setSearch} placeholder="Search rooms..." />}>
 
@@ -98,7 +99,7 @@ export default function RoomsPage() {
 // ── Shared layout helpers ──────────────────────────────────────────────────────
 
 export function AdminPageLayout({ title, icon, total, onAdd, error, search, children }: {
-  title: string; icon: string; total: number; onAdd: () => void;
+  title: string; icon: React.ReactNode; total: number; onAdd: () => void;
   error: string | null; search: React.ReactNode; children: React.ReactNode;
 }) {
   const navigate = useNavigate();
@@ -108,7 +109,7 @@ export function AdminPageLayout({ title, icon, total, onAdd, error, search, chil
       <div className="border-b border-slate-200 bg-white px-6 py-5">
         <div className="mx-auto max-w-5xl flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="text-2xl">{icon}</span>
+            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-slate-700">{icon}</span>
             <div>
               <h1 className="text-xl font-bold text-slate-900">{title}</h1>
               <p className="text-xs text-slate-500">{total} item(s)</p>
@@ -117,8 +118,9 @@ export function AdminPageLayout({ title, icon, total, onAdd, error, search, chil
           <div className="flex items-center gap-3">
             {search}
             <button onClick={onAdd}
-              className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 transition">
-              + Add
+              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 transition">
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Add
             </button>
           </div>
         </div>
@@ -133,8 +135,9 @@ export function AdminPageLayout({ title, icon, total, onAdd, error, search, chil
       </div>
       <main className="mx-auto max-w-5xl px-6 py-6">
         {error && (
-          <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
-            ❌ {error}
+          <div className="mb-4 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+            <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+            {error}
           </div>
         )}
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">

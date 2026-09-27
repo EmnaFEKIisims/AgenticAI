@@ -1,3 +1,5 @@
+import { RefreshCw, CheckCircle2, XCircle, RotateCcw } from 'lucide-react';
+
 interface DataActionsProps {
   status: 'idle' | 'uploading' | 'processing' | 'preview' | 'validated' | 'rejected';
   onValidate: () => void;
@@ -16,25 +18,30 @@ export default function DataActions({
   loading,
 }: DataActionsProps) {
   return (
-    <section className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
-      <div className="flex flex-wrap gap-3 items-center">
+    <section className="data-actions-bar">
+      <div className="data-actions-label"><span className="data-actions-pulse" /> Review controls</div>
+      <div className="data-actions-buttons">
         <button
           type="button"
           onClick={onRefresh}
           disabled={loading}
-          className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          className="data-secondary-button"
         >
-          Refresh Preview
+          <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+          Refresh preview
         </button>
+
+        <div className="data-actions-spacer" />
 
         {status !== 'validated' && (
           <button
             type="button"
             onClick={onValidate}
             disabled={loading}
-            className="px-4 py-2 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:bg-gray-300"
+            className="data-approve-button"
           >
-            Validate Data
+            <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+            Validate data
           </button>
         )}
 
@@ -42,8 +49,9 @@ export default function DataActions({
           type="button"
           onClick={onReject}
           disabled={loading}
-          className="px-4 py-2 rounded-md bg-red-600 text-white hover:bg-red-700 disabled:bg-gray-300"
+          className="data-danger-button"
         >
+          <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
           Reject
         </button>
 
@@ -51,8 +59,9 @@ export default function DataActions({
           type="button"
           onClick={onReset}
           disabled={loading}
-          className="px-4 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          className="data-secondary-button"
         >
+          <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
           Reset
         </button>
       </div>

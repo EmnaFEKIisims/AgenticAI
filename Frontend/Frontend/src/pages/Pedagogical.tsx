@@ -24,6 +24,7 @@
 //     <CriterionCard />        ← détail au clic
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { FileCheck2, ShieldCheck } from "lucide-react";
 import { useLocation }         from "react-router-dom";
 
 import AuditHeader             from "../components/pedagogical/AuditHeader";
@@ -213,24 +214,31 @@ export default function PedagogicalAuditPage() {
     <div className="min-h-screen bg-slate-50">
 
       {/* ── Page header bar ─────────────────────────────────────────────── */}
-      <div className="border-b border-slate-200 bg-white px-6 py-4">
-        <div className="mx-auto max-w-6xl flex items-center gap-3">
-          <span className="text-2xl">📋</span>
-          <div>
-            <h1 className="text-lg font-bold text-slate-900">Pedagogical Agent</h1>
-            <p className="text-xs text-slate-500">
-              Audit based on ISO 21001:2018 · ISO 29993:2017
-            </p>
+      <div className="border-b border-slate-200 bg-white/90 backdrop-blur-sm">
+        <div className="mx-auto max-w-6xl px-6 py-4">
+          <div className="flex items-center gap-4">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-700 shadow-sm">
+              <FileCheck2 className="h-5 w-5" aria-hidden="true" />
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <h1 className="text-lg font-semibold tracking-tight text-slate-900">Pedagogical Agent</h1>
+              <p className="text-xs text-slate-500">
+                Audit based on ISO 21001:2018 · ISO 29993:2017
+              </p>
+            </div>
+
+            {hasReport && report && (
+              <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                isCompliant
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-rose-200 bg-rose-50 text-rose-700"
+              }`}>
+                <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+                {isCompliant ? "Compliant" : "Non-compliant"}
+              </div>
+            )}
           </div>
-          {hasReport && report && (
-            <span className={`ml-auto rounded-full border px-4 py-1 text-xs font-semibold ${
-              isCompliant
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                : "border-rose-200   bg-rose-50   text-rose-700"
-            }`}>
-              {isCompliant ? "✅ Compliant" : "❌ Non-Compliant"}
-            </span>
-          )}
         </div>
       </div>
 

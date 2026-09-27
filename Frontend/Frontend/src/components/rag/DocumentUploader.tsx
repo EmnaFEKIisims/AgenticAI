@@ -2,6 +2,7 @@
 // Paste or upload text to add to the Qdrant knowledge base.
 
 import { useState } from "react";
+import { FilePlus2, CheckCircle2, Loader2, Send, FileText } from "lucide-react";
 
 interface Props {
   onIngest:  (title: string, source: string, content: string) => Promise<void>;
@@ -22,38 +23,101 @@ export default function DocumentUploader({ onIngest, isLoading }: Props) {
     setTimeout(() => setDone(false), 3000);
   };
 
-  if (done) return (
-    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-center text-sm font-semibold text-emerald-700">
-      ✅ Document indexed into Qdrant knowledge base.
-    </div>
-  );
+  if (done) {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/70 px-5 py-4 shadow-sm">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-600 shadow-sm">
+          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <div>
+          <p className="text-sm font-semibold text-emerald-800">Document indexed</p>
+          <p className="text-xs text-emerald-700/80">Added to the Qdrant knowledge base.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
-      <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
-        📄 Add Knowledge Document
-      </p>
-      <p className="text-xs text-slate-400">
-        Paste pedagogical rules, ISO standards, or guidelines. They'll be chunked, embedded, and stored in Qdrant.
-      </p>
+    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+      {/* Header */}
+      <header className="flex items-start gap-3 border-b border-slate-100 bg-linear-to-br from-slate-50 via-white to-white px-5 py-4">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white shadow-sm">
+          <FilePlus2 className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold tracking-tight text-slate-900">
+            Add knowledge document
+          </h3>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Pasted text will be chunked, embedded, and stored in Qdrant.
+          </p>
+        </div>
+      </header>
 
-      <input value={title} onChange={e => setTitle(e.target.value)}
-        placeholder="Document title (e.g. ISO 21001 Training Rules)"
-        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-400" />
+      {/* Body */}
+      <div className="space-y-3 bg-slate-50/40 p-5">
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            Title
+          </label>
+          <input
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            placeholder="e.g. ISO 21001 Training Rules"
+            className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+          />
+        </div>
 
-      <input value={source} onChange={e => setSource(e.target.value)}
-        placeholder="Source (e.g. ISO 21001:2018)"
-        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-400" />
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            Source
+          </label>
+          <input
+            value={source}
+            onChange={e => setSource(e.target.value)}
+            placeholder="e.g. ISO 21001:2018"
+            className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+          />
+        </div>
 
-      <textarea value={content} onChange={e => setContent(e.target.value)}
-        placeholder="Paste the full text of the document here..."
-        rows={6}
-        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-400 resize-none" />
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            Content
+          </label>
+          <textarea
+            value={content}
+            onChange={e => setContent(e.target.value)}
+            placeholder="Paste the full text of the document here…"
+            rows={6}
+            className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+          />
+        </div>
 
-      <button onClick={handleSubmit} disabled={!title.trim() || !content.trim() || isLoading}
-        className="w-full rounded-xl bg-slate-900 py-2.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50 transition">
-        {isLoading ? "Indexing into Qdrant…" : "Index Document"}
-      </button>
+        <div className="flex items-center justify-between gap-3 pt-1">
+          <p className="text-[11px] text-slate-400">
+            <FileText className="mr-1 inline h-3 w-3" aria-hidden="true" />
+            {content.length} characters
+          </p>
+
+          <button
+            onClick={handleSubmit}
+            disabled={!title.trim() || !content.trim() || isLoading}
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 hover:shadow disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                Indexing…
+              </>
+            ) : (
+              <>
+                <Send className="h-3.5 w-3.5" aria-hidden="true" />
+                Index document
+              </>
+            )}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
