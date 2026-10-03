@@ -60,7 +60,7 @@ export default function AnomalyList({
   if (filtered.length === 0) {
     return (
       <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center">
-        <p className="text-3xl mb-3">🔎</p>
+        <p className="text-3xl mb-3">No results</p>
         <p className="text-sm font-semibold text-slate-700">No anomalies match these filters</p>
       </div>
     );

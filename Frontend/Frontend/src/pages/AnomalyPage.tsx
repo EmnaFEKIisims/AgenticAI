@@ -19,6 +19,7 @@ import AnomalySummary   from "../components/Anomaly/AnomalySummary";
 import AnomalyFilters   from "../components/Anomaly/AnomalyFilters";
 import AnomalyList      from "../components/Anomaly/AnomalyList";
 import AnomalyDetails   from "../components/Anomaly/AnomalyDetails";
+import "../styles/anomaly.css";
 
 
 export default function AnomalyPage() {
@@ -48,12 +49,12 @@ export default function AnomalyPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="anomaly-page min-h-screen bg-slate-50">
 
       {/* Top bar */}
-      <div className="border-b border-slate-200 bg-white/90 backdrop-blur-sm">
+      <div className="anomaly-topbar border-b border-slate-200 bg-white/90 backdrop-blur-sm">
         <div className="mx-auto flex max-w-6xl items-center gap-4 px-6 py-4">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-sky-100 bg-sky-50 text-sky-700 shadow-sm">
+          <div className="anomaly-topbar-icon flex h-11 w-11 items-center justify-center rounded-xl border border-sky-100 bg-sky-50 text-sky-700 shadow-sm">
             <SearchCheck className="h-5 w-5" aria-hidden="true" />
           </div>
           <div className="min-w-0 flex-1">
@@ -63,12 +64,12 @@ export default function AnomalyPage() {
         </div>
       </div>
 
-      <main className="mx-auto max-w-6xl px-6 py-8 space-y-6">
+      <main className="anomaly-main mx-auto max-w-6xl space-y-6 px-6 py-8">
 
         {/* Error */}
         {error && (
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800">
-            ❌ {error}
+          <div className="anomaly-error rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800">
+            {error}
           </div>
         )}
 
@@ -82,7 +83,7 @@ export default function AnomalyPage() {
 
         {/* Loading spinner */}
         {isLoading && (
-          <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center">
+          <div className="anomaly-loading rounded-3xl border border-slate-200 bg-white p-10 text-center">
             <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-slate-800" />
             <p className="text-sm font-semibold text-slate-700">Loading anomalies…</p>
           </div>
@@ -90,12 +91,8 @@ export default function AnomalyPage() {
 
         {/* Empty state */}
         {!isLoading && anomalies.length === 0 && (
-          <div className="rounded-3xl border border-emerald-200 bg-emerald-50 p-10 text-center">
-            <p className="text-3xl mb-3">✅</p>
+          <div className="anomaly-empty rounded-3xl border border-emerald-200 bg-emerald-50 p-10 text-center">
             <p className="text-sm font-semibold text-emerald-800">No anomalies detected.</p>
-            <p className="text-xs text-emerald-600 mt-1">
-              Generate a planning first — anomalies appear here automatically.
-            </p>
           </div>
         )}
 
@@ -113,7 +110,7 @@ export default function AnomalyPage() {
               onSearchChange   = {setSearch}
             />
 
-            <div className="grid gap-6 lg:grid-cols-[1fr_420px]">
+            <div className="anomaly-results-grid grid gap-6 lg:grid-cols-[1fr_420px]">
               <AnomalyList
                 anomalies      = {anomalies}
                 selected       = {selected}

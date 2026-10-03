@@ -19,7 +19,7 @@ export default function ValidationDialog({ mode, loading, onConfirm, onCancel }:
   const ph       = isReject
     ? "e.g. Too many sessions on Monday, not enough break time..."
     : "e.g. Move ML to Wednesday morning. Reduce Thursday load.";
-  const btnLabel = isReject ? "❌ Confirm rejection" : "🔄 Apply & regenerate";
+  const btnLabel = isReject ? "Confirm rejection" : "Apply & regenerate";
   const btnClass = isReject
     ? "bg-rose-600 hover:bg-rose-700"
     : "bg-violet-600 hover:bg-violet-700";

@@ -13,16 +13,16 @@ export function Pagination({ page, total, pageSize, onChange }: PaginationProps)
   if (totalPages <= 1) return null;
 
   return (
-    <div className="flex items-center justify-between gap-4 border-t border-slate-100 px-5 py-3.5">
-      <p className="text-xs text-slate-500">
-        Showing <span className="font-medium text-slate-700">{(page - 1) * pageSize + 1}</span>
-        –<span className="font-medium text-slate-700">{Math.min(page * pageSize, total)}</span>
-        {" "}of <span className="font-medium text-slate-700">{total}</span>
+    <div className="crud-pagination">
+      <p>
+        Showing <strong>{(page - 1) * pageSize + 1}</strong>
+        –<strong>{Math.min(page * pageSize, total)}</strong>
+        {" "}of <strong>{total}</strong>
       </p>
 
-      <div className="flex items-center gap-1">
+      <div className="crud-pagination-buttons">
         <button onClick={() => onChange(page - 1)} disabled={page === 1}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
+          className="crud-page-button icon-button">
           <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
 
@@ -31,10 +31,10 @@ export function Pagination({ page, total, pageSize, onChange }: PaginationProps)
           if (p > totalPages) return null;
           return (
             <button key={p} onClick={() => onChange(p)}
-              className={`h-8 min-w-8 rounded-lg border px-3 text-xs font-semibold transition ${
+              className={`crud-page-button ${
                 p === page
-                  ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-                  : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  ? "is-current"
+                  : ""
               }`}>
               {p}
             </button>
@@ -42,7 +42,7 @@ export function Pagination({ page, total, pageSize, onChange }: PaginationProps)
         })}
 
         <button onClick={() => onChange(page + 1)} disabled={page === totalPages}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
+          className="crud-page-button icon-button">
           <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
       </div>

@@ -14,10 +14,10 @@ interface NotificationItemProps {
 }
 
 const TYPE_CONFIG: Record<NotifType, { icon: string; color: string; bg: string }> = {
-  error:   { icon: "🔴", color: "text-rose-700",    bg: "bg-rose-50 border-rose-200" },
-  warning: { icon: "🟡", color: "text-amber-700",   bg: "bg-amber-50 border-amber-200" },
-  info:    { icon: "🔵", color: "text-sky-700",     bg: "bg-sky-50 border-sky-200" },
-  success: { icon: "🟢", color: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200" },
+  error:   { icon: "", color: "text-rose-700",    bg: "bg-rose-50 border-rose-200" },
+  warning: { icon: "", color: "text-amber-700",   bg: "bg-amber-50 border-amber-200" },
+  info:    { icon: "", color: "text-sky-700",     bg: "bg-sky-50 border-sky-200" },
+  success: { icon: "", color: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200" },
 };
 
 export default function NotificationItem({ notification, onMarkRead, onDelete }: NotificationItemProps) {

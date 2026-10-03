@@ -19,10 +19,7 @@ export function scoreToLabel(score: number): string {
 }
 
 export function scoreToEmoji(score: number): string {
-  if (score >= 90) return "🟢";
-  if (score >= 75) return "🟡";
-  if (score >= 60) return "🟠";
-  return "🔴";
+  return "";
 }
 
 // =============================================================================
@@ -104,6 +101,6 @@ export function complianceBadge(isCompliant: boolean): {
   className: string;
 } {
   return isCompliant
-    ? { label: "✅ Compliant",     className: "bg-emerald-100 text-emerald-700 border-emerald-200" }
-    : { label: "❌ Non-Compliant", className: "bg-rose-100    text-rose-700    border-rose-200"    };
+    ? { label: "Compliant",     className: "bg-emerald-100 text-emerald-700 border-emerald-200" }
+    : { label: "Non-Compliant", className: "bg-rose-100    text-rose-700    border-rose-200"    };
 }

@@ -62,7 +62,7 @@ export default function AnomalyDetails({
         {/* Recommendation */}
         {anomaly.recommendation && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
-            <p className="text-xs font-semibold text-amber-700 mb-1">💡 Recommendation</p>
+            <p className="text-xs font-semibold text-amber-700 mb-1">Recommendation</p>
             <p className="text-sm text-amber-900">{anomaly.recommendation}</p>
           </div>
         )}

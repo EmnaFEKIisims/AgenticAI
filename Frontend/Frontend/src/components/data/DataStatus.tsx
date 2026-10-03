@@ -62,7 +62,7 @@ const STATUS_COPY: Record<
 export default function DataStatus({ status, loading, error, filename }: DataStatusProps) {
   if (error) {
     return (
-      <section className="overflow-hidden rounded-2xl border border-rose-100 bg-rose-50/60 shadow-sm">
+      <section className="data-status-panel overflow-hidden rounded-2xl border border-rose-100 bg-rose-50/60 shadow-sm">
         <div className="flex items-start gap-3 p-4 sm:p-5">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-rose-600 shadow-sm">
             <AlertTriangle className="h-4 w-4" aria-hidden="true" />
@@ -80,7 +80,7 @@ export default function DataStatus({ status, loading, error, filename }: DataSta
   const Icon = current.Icon;
 
   return (
-    <section className={`overflow-hidden rounded-2xl border shadow-sm ${current.tone}`}>
+    <section className={`data-status-panel overflow-hidden rounded-2xl border shadow-sm ${current.tone}`}>
       <div className="flex items-start gap-3 p-4 sm:p-5">
         <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${current.iconBg}`}>
           <Icon

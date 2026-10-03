@@ -40,11 +40,11 @@ export default function AuditHeader({
   const hasContext = Boolean(groupName || planningId);
 
   return (
-    <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+    <section className="ped-audit-card overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
       {/* Header */}
-      <header className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 bg-linear-to-br from-slate-50 via-white to-white px-6 py-6 sm:px-8">
+      <header className="ped-audit-card-top flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 bg-linear-to-br from-slate-50 via-white to-white px-6 py-6 sm:px-8">
         <div className="flex items-start gap-4">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white shadow-sm">
+          <span className="ped-audit-icon flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white shadow-sm">
             <ClipboardCheck className="h-5 w-5" aria-hidden="true" />
           </span>
           <div className="min-w-0">
@@ -70,7 +70,7 @@ export default function AuditHeader({
 
         {/* Planning context */}
         {hasContext && (
-          <div className="min-w-0 rounded-2xl border border-slate-100 bg-slate-50/60 px-4 py-3">
+          <div className="ped-audit-context min-w-0 rounded-2xl border border-slate-100 bg-slate-50/60 px-4 py-3">
             {groupName && (
               <p className="flex items-center gap-2 text-sm font-semibold text-slate-800">
                 <Users className="h-3.5 w-3.5 text-slate-500" aria-hidden="true" />
@@ -100,12 +100,12 @@ export default function AuditHeader({
       </header>
 
       {/* Actions */}
-      <div className="flex flex-wrap items-center gap-3 bg-white px-6 py-5 sm:px-8">
+      <div className="ped-audit-actions flex flex-wrap items-center gap-3 bg-white px-6 py-5 sm:px-8">
         <button
           type="button"
           onClick={onAudit}
           disabled={isLoading || !canAudit}
-          className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 hover:shadow disabled:cursor-not-allowed disabled:opacity-50"
+          className="ped-audit-primary inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 hover:shadow disabled:cursor-not-allowed disabled:opacity-50"
         >
           {isLoading ? (
             <>
@@ -125,7 +125,7 @@ export default function AuditHeader({
             type="button"
             onClick={onReset}
             disabled={isLoading}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="ped-audit-reset inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <RotateCcw className="h-4 w-4" aria-hidden="true" />
             Reset

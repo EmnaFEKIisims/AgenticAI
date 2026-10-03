@@ -70,7 +70,7 @@ export default function PlanningPage() {
   const [attempt,         setAttempt]         = useState(1);
   const [currentWeek,     setCurrentWeek]     = useState(1);
   const [localSchedule,   setLocalSchedule]   = useState<SessionSlotOut[]>([]);
-  const [dialog,          setDialog]          = useState<"none"|"reject"|"modify"|"regenerate">("none");
+  const [dialog,          setDialog]          = useState<"none"|"reject"|"regenerate">("none");
   const [searchQuery,     setSearchQuery]     = useState("");
   const [isSearchOpen,    setIsSearchOpen]    = useState(false);
   // ← ADDED: surfaces the case where Validate/Reject can't reach the backend
@@ -319,10 +319,6 @@ export default function PlanningPage() {
     handleReset();
   }, [planningGroupId, validation, handleReset]);
 
-  const handleModifyConfirm = useCallback((_text: string) => {
-    setDialog("regenerate");
-  }, []);
-
   // =============================================================================
   //  Regeneration
   // =============================================================================
@@ -568,7 +564,7 @@ export default function PlanningPage() {
                   </div>
                   <div>
                     <h3 className="text-lg font-semibold text-gray-900">
-                      {hitlStatus === "validated" ? "Schedule Validated ✅" : "Schedule Generated Successfully"}
+                      {hitlStatus === "validated" ? "Schedule Validated" : "Schedule Generated Successfully"}
                     </h3>
                     <p className="text-sm text-gray-600">
                       {hitlStatus === "validated" ? "This planning has been confirmed." : "Review, validate or adjust below."}
@@ -585,7 +581,7 @@ export default function PlanningPage() {
                         {validation.loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                         Validate
                       </button>
-                      <button onClick={() => setDialog("modify")} disabled={validation.loading}
+                      <button onClick={() => setDialog("regenerate")} disabled={validation.loading}
                         className="px-4 py-2 bg-violet-100 border border-violet-300 text-violet-800 rounded-xl font-medium hover:bg-violet-200 flex items-center gap-2 text-sm disabled:opacity-60">
                         <Settings2 className="w-4 h-4" />Modify
                       </button>
@@ -731,9 +727,6 @@ export default function PlanningPage() {
       )}
       {dialog === "reject" && (
         <ValidationDialog mode="reject" loading={validation.loading} onConfirm={handleRejectConfirm} onCancel={() => setDialog("none")} />
-      )}
-      {dialog === "modify" && (
-        <ValidationDialog mode="modify" loading={false} onConfirm={handleModifyConfirm} onCancel={() => setDialog("none")} />
       )}
       {dialog === "regenerate" && (
         <RegenerationDialog attempt={attempt + 1} regenerating={regeneration.regenerating} onRegenerate={handleRegenerate} onCancel={() => setDialog("none")} />

@@ -22,13 +22,13 @@ export default function NarrativeSummary({ narrative, isCompliant }: NarrativeSu
   if (!narrative) return null;
 
   return (
-    <div className={`rounded-3xl border p-6 ${
+    <div className={`ped-summary-card rounded-3xl border p-6 ${
       isCompliant
         ? "border-emerald-200 bg-emerald-50/50"
         : "border-amber-200 bg-amber-50/50"
     }`}>
       <div className="flex items-start gap-3">
-        <span className="text-2xl leading-none">{isCompliant ? "✅" : "🔎"}</span>
+        <span className="ped-summary-icon" aria-hidden="true">{isCompliant ? "✓" : "!"}</span>
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
             Summary

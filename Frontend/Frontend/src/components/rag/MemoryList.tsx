@@ -48,10 +48,10 @@ export default function MemoryList({ userId }: Props) {
           </span>
           <div>
             <h3 className="text-sm font-semibold tracking-tight text-slate-900">
-              Memory vectors
+              Your preferences
             </h3>
             <p className="text-xs text-slate-500">
-              {summary.total} stored in Qdrant
+              {summary.total} preference{summary.total === 1 ? "" : "s"} available to your plans
             </p>
           </div>
         </div>
@@ -72,7 +72,7 @@ export default function MemoryList({ userId }: Props) {
               className="inline-flex items-center gap-1.5 rounded-lg border border-rose-100 bg-rose-50/60 px-2.5 py-1.5 text-[11px] font-semibold text-rose-700 transition hover:border-rose-200 hover:bg-rose-50"
             >
               <Trash2 className="h-3 w-3" aria-hidden="true" />
-              Clear
+              Clear preferences
             </button>
           )}
         </div>
@@ -124,7 +124,7 @@ export default function MemoryList({ userId }: Props) {
         {isLoading && (
           <div className="flex items-center justify-center gap-2 py-8 text-xs text-slate-500">
             <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-            Loading from Qdrant…
+            Loading your preferences…
           </div>
         )}
 
@@ -134,9 +134,9 @@ export default function MemoryList({ userId }: Props) {
               <Brain className="h-5 w-5" aria-hidden="true" />
             </span>
             <div className="space-y-1">
-              <p className="text-sm font-semibold text-slate-700">No memories yet</p>
+              <p className="text-sm font-semibold text-slate-700">Nothing saved yet</p>
               <p className="max-w-xs text-xs text-slate-400">
-                Memories are created when you generate, validate, or give feedback on plannings.
+                Your preferences appear here as you review schedules and share feedback.
               </p>
             </div>
           </div>

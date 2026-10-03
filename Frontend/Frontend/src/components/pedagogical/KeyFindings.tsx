@@ -37,7 +37,6 @@ export default function KeyFindings({ strengths, issues, onSelect }: KeyFindings
       {/* Strengths */}
       <section className="rounded-3xl border border-emerald-200 bg-white p-6 shadow-sm">
         <div className="flex items-center gap-2">
-          <span className="text-lg">✅</span>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">
             What is working well
           </p>
@@ -67,7 +66,6 @@ export default function KeyFindings({ strengths, issues, onSelect }: KeyFindings
       {/* Issues */}
       <section className="rounded-3xl border border-rose-200 bg-white p-6 shadow-sm">
         <div className="flex items-center gap-2">
-          <span className="text-lg">⚠️</span>
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-rose-700">
             Needs priority fixes
           </p>
@@ -94,7 +92,7 @@ export default function KeyFindings({ strengths, issues, onSelect }: KeyFindings
                   </p>
                   {c.recommendation && (
                     <p className="mt-1.5 text-xs font-medium text-rose-700">
-                      💡 {c.recommendation}
+                      {c.recommendation}
                     </p>
                   )}
                 </button>

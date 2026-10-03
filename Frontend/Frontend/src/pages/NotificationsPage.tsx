@@ -82,10 +82,10 @@ export default function NotificationsPage() {
                   : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
               }`}>
               {f === "all"     && "All"}
-              {f === "error"   && "🔴 Errors"}
-              {f === "warning" && "🟡 Warnings"}
-              {f === "info"    && "🔵 Info"}
-              {f === "success" && "🟢 Success"}
+              {f === "error"   && "Errors"}
+              {f === "warning" && "Warnings"}
+              {f === "info"    && "Info"}
+              {f === "success" && "Success"}
             </button>
           ))}
         </div>
@@ -93,7 +93,7 @@ export default function NotificationsPage() {
         {/* Error */}
         {error && (
           <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
-            ❌ {error}
+              {error}
           </div>
         )}
 

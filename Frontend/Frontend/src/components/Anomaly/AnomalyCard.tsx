@@ -50,7 +50,7 @@ export default function AnomalyCard({
       {/* Recommendation */}
       {anomaly.recommendation && (
         <p className="mt-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-          💡 {anomaly.recommendation}
+          {anomaly.recommendation}
         </p>
       )}
 

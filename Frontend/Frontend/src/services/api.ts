@@ -4,9 +4,9 @@
 // Single centralized fetch function used by ALL services.
 //
 // What it does automatically:
-//   ✅ Adds X-User-ID header        → backend knows which user
-//   ✅ Adds Content-Type: application/json
-//   ✅ Handles errors uniformly
+//   Adds X-User-ID header        → backend knows which user
+//   Adds Content-Type: application/json
+//   Handles errors uniformly
 //   🔜 Will add Authorization: Bearer (after Keycloak)
 
 const SUPERADMIN_ID = "00000000-0000-0000-0000-000000000001";

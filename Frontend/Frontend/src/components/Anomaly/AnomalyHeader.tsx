@@ -19,7 +19,6 @@ export default function AnomalyHeader({
   if (hasCritical) {
     return (
       <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-3.5 flex items-center gap-3">
-        <span className="text-xl">🚨</span>
         <div>
           <p className="text-sm font-bold text-rose-800">Critical anomalies detected</p>
           <p className="text-xs text-rose-600">
@@ -33,7 +32,6 @@ export default function AnomalyHeader({
   if (openCount > 0) {
     return (
       <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3.5 flex items-center gap-3">
-        <span className="text-xl">⚠️</span>
         <p className="text-sm font-semibold text-amber-800">
           {openCount} open anomal{openCount === 1 ? "y" : "ies"} to review — none critical.
         </p>
@@ -43,7 +41,6 @@ export default function AnomalyHeader({
 
   return (
     <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3.5 flex items-center gap-3">
-      <span className="text-xl">✅</span>
       <p className="text-sm font-semibold text-emerald-800">
         All clear — no open anomalies right now.
       </p>
