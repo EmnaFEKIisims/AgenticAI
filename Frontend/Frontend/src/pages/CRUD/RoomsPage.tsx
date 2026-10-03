@@ -12,6 +12,7 @@ import { LoadingState }       from "../../components/crud/LoadingState";
 import { Pagination }         from "../../components/crud/Pagination";
 import type { Room }          from "../../types/crud_types";
 import { useNavigate } from "react-router-dom";
+import "../../styles/crud.css";
 
 const CRUD_LINKS = [
   ["Courses", "/admin/courses"],
@@ -103,44 +104,59 @@ export function AdminPageLayout({ title, icon, total, onAdd, error, search, chil
   error: string | null; search: React.ReactNode; children: React.ReactNode;
 }) {
   const navigate = useNavigate();
+  const descriptions: Record<string, string> = {
+    Rooms: "Spaces and capacity available for each session.",
+    Trainers: "People, expertise, and availability for your planning.",
+    "Learner Groups": "Cohorts, levels, and learner capacity.",
+    Courses: "The learning catalogue used to build schedules.",
+    Equipment: "Resources and quantities available to trainers.",
+  };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="border-b border-slate-200 bg-white px-6 py-5">
-        <div className="mx-auto max-w-5xl flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-slate-700">{icon}</span>
+    <div className="crud-page crud-entity-page">
+      <header className="crud-entity-header">
+        <div className="crud-entity-header-inner">
+          <div className="crud-entity-heading">
+            <span className="crud-entity-icon">{icon}</span>
             <div>
-              <h1 className="text-xl font-bold text-slate-900">{title}</h1>
-              <p className="text-xs text-slate-500">{total} item(s)</p>
+              <p className="crud-kicker">Workspace / Administration</p>
+              <h1>{title}</h1>
+              <p>{descriptions[title]}</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="crud-entity-actions">
+            <span className="crud-record-count"><strong>{total}</strong> {total === 1 ? "record" : "records"}</span>
             {search}
-            <button onClick={onAdd}
-              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 transition">
+            <button onClick={onAdd} className="crud-add-button">
               <Plus className="h-4 w-4" aria-hidden="true" />
-              Add
+              Add {title.replace(/s$/, "")}
             </button>
           </div>
         </div>
-        <nav className="mx-auto mt-4 flex max-w-5xl flex-wrap gap-2" aria-label="CRUD resources">
+        <nav className="crud-resource-nav" aria-label="CRUD resources">
           {CRUD_LINKS.map(([label, path]) => (
             <button key={path} type="button" onClick={() => navigate(path)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${path.endsWith(title.toLowerCase().replace(" ", "-")) ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+              className={`crud-nav-item ${path.endsWith(title.toLowerCase().replace(" ", "-")) ? "is-active" : ""}`}>
               {label}
             </button>
           ))}
         </nav>
-      </div>
-      <main className="mx-auto max-w-5xl px-6 py-6">
+      </header>
+      <main className="crud-entity-main">
         {error && (
-          <div className="mb-4 flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+          <div className="crud-error">
             <AlertTriangle className="h-4 w-4" aria-hidden="true" />
             {error}
           </div>
         )}
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div className="crud-table-card">
+          <div className="crud-table-card-header">
+            <div>
+              <span className="crud-section-label">Collection</span>
+              <h2>{title} records</h2>
+            </div>
+            <span className="crud-table-card-note">Updated in your workspace</span>
+          </div>
           {children}
         </div>
       </main>
@@ -150,8 +166,8 @@ export function AdminPageLayout({ title, icon, total, onAdd, error, search, chil
 
 export function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-1">
-      <label className="text-xs font-semibold text-slate-600">{label}</label>
+    <div className="crud-field">
+      <label>{label}</label>
       {children}
     </div>
   );
@@ -159,13 +175,13 @@ export function Field({ label, children }: { label: string; children: React.Reac
 
 export function ModalFooter({ onCancel, onSave, saving }: { onCancel: () => void; onSave: () => void; saving: boolean }) {
   return (
-    <div className="flex gap-3 pt-2">
-      <button onClick={onCancel} className="flex-1 rounded-xl border border-slate-200 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
-      <button onClick={onSave} disabled={saving} className="flex-1 rounded-xl bg-slate-900 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60">
+    <div className="crud-modal-footer">
+      <button onClick={onCancel} className="crud-modal-cancel">Cancel</button>
+      <button onClick={onSave} disabled={saving} className="crud-modal-save">
         {saving ? "Saving…" : "Save"}
       </button>
     </div>
   );
 }
 
-export const inputCls = "w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800 outline-none focus:border-slate-400 focus:bg-white transition";
+export const inputCls = "crud-input";

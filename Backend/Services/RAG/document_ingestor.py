@@ -1,7 +1,7 @@
 """
 Services/RAG/document_ingestor.py
 ====================================
-Ingests external documents into the RAG knowledge base.
+Ingests external documents into the RAG knowledge base (Qdrant).
 
 Pipeline:
   File (PDF/DOCX/TXT/raw text)
@@ -12,32 +12,18 @@ Pipeline:
        ↓
   Embedding service (embed each chunk)
        ↓
-  ChromaDB (store vectors)
+  Qdrant (store vectors)
        ↓
   PostgreSQL (store metadata: KnowledgeDocument + KnowledgeChunks)
 """
 
 import uuid
 from sqlalchemy.orm import Session
+from qdrant_client.models import PointStruct
 
 from Services.RAG.chunker import chunk_document, TextChunk
 from repositories.knowledge_repository import KnowledgeRepository
-from rag.rag_config import get_collection
-
-
-# ChromaDB collection for knowledge documents (separate from user memories)
-KNOWLEDGE_COLLECTION_NAME = "knowledge_documents"
-
-
-def _get_knowledge_collection():
-    """Returns the ChromaDB collection for pedagogical knowledge."""
-    from rag.rag_config import get_client, get_embedding_fn
-    client = get_client()
-    return client.get_or_create_collection(
-        name               = KNOWLEDGE_COLLECTION_NAME,
-        embedding_function = get_embedding_fn(),
-        metadata           = {"hnsw:space": "cosine"},
-    )
+from rag.rag_config import get_qdrant, embed, embed_batch, COLLECTION_KNOWLEDGE
 
 
 def ingest_text(
@@ -54,15 +40,12 @@ def ingest_text(
     Steps:
       1. Create KnowledgeDocument record in PostgreSQL
       2. Chunk the text
-      3. Embed and store each chunk in ChromaDB
+      3. Embed and store each chunk in Qdrant
       4. Save chunk metadata in PostgreSQL
       5. Mark document as indexed
-
-    Returns dict with document_id and chunk count.
     """
     repo = KnowledgeRepository(db)
 
-    # Step 1: Create document record
     doc = repo.create_document(
         title         = title,
         source        = source,
@@ -70,41 +53,39 @@ def ingest_text(
     )
     print(f"  [Ingestor] Created document #{doc.id}: '{title}'")
 
-    # Step 2: Chunk
     chunks: list[TextChunk] = chunk_document(text, strategy=strategy)
     print(f"  [Ingestor] {len(chunks)} chunks created.")
 
     if not chunks:
         return {"document_id": doc.id, "chunks_count": 0}
 
-    # Step 3: Store in ChromaDB
-    col       = _get_knowledge_collection()
-    ids       = []
-    documents = []
-    metadatas = []
+    client  = get_qdrant()
+    vectors = embed_batch([c.content for c in chunks])
+    points  = []
 
-    for chunk in chunks:
-        chroma_id = str(uuid.uuid4())
-        ids.append(chroma_id)
-        documents.append(chunk.content)
-        metadatas.append({
-            "document_id": doc.id,
-            "title":       title,
-            "source":      source,
-            "chunk_index": chunk.chunk_index,
-            "section":     chunk.section or "",
-            "page":        str(chunk.page_number or ""),
-        })
-        chunk.content  # attach chroma_id to chunk for PostgreSQL save
-        chunk.__dict__["chroma_id"] = chroma_id
+    for chunk, vector in zip(chunks, vectors):
+        point_id = str(uuid.uuid4())
+        chunk.__dict__["chroma_id"] = point_id  # kept as generic chunk reference id
+        points.append(PointStruct(
+            id      = point_id,
+            vector  = vector,
+            payload = {
+                "content":     chunk.content,
+                "document_id": doc.id,
+                "title":       title,
+                "source":      source,
+                "chunk_index": chunk.chunk_index,
+                "section":     chunk.section or "",
+                "page":        str(chunk.page_number or ""),
+            },
+        ))
 
     try:
-        col.add(ids=ids, documents=documents, metadatas=metadatas)
-        print(f"  [Ingestor] {len(chunks)} chunks stored in ChromaDB.")
+        client.upsert(collection_name=COLLECTION_KNOWLEDGE, points=points)
+        print(f"  [Ingestor] {len(points)} chunks stored in Qdrant.")
     except Exception as e:
-        print(f"  [Ingestor] ChromaDB error: {e}")
+        print(f"  [Ingestor] Qdrant error: {e}")
 
-    # Step 4: Save chunk metadata in PostgreSQL
     chunk_dicts = [
         {
             "content":     c.content,
@@ -117,7 +98,6 @@ def ingest_text(
     ]
     repo.create_chunks(doc.id, chunk_dicts)
 
-    # Step 5: Mark indexed
     repo.mark_indexed(doc.id)
     print(f"  [Ingestor] ✅ Document #{doc.id} indexed successfully.")
 
@@ -145,28 +125,23 @@ def query_knowledge(query: str, n_results: int = 5) -> list[dict]:
     Searches the knowledge base for chunks relevant to a query.
     Used by prompt_builder to enrich LLM context with pedagogical rules.
     """
-    col   = _get_knowledge_collection()
-    total = col.count()
-    if total == 0:
-        return []
+    client    = get_qdrant()
+    query_vec = embed(query)
 
-    results = col.query(
-        query_texts = [query],
-        n_results   = min(n_results, total),
-        include     = ["documents", "metadatas", "distances"],
+    results = client.search(
+        collection_name = COLLECTION_KNOWLEDGE,
+        query_vector    = query_vec,
+        limit           = n_results,
+        with_payload    = True,
     )
 
     return [
         {
-            "content":    doc,
-            "source":     meta.get("source", ""),
-            "title":      meta.get("title", ""),
-            "similarity": round(1.0 - dist, 3),
+            "content":    r.payload.get("content", ""),
+            "source":     r.payload.get("source", ""),
+            "title":      r.payload.get("title", ""),
+            "similarity": round(r.score, 3),
         }
-        for doc, meta, dist in zip(
-            results["documents"][0],
-            results["metadatas"][0],
-            results["distances"][0],
-        )
-        if (1.0 - dist) >= 0.3
+        for r in results
+        if r.score >= 0.3
     ]

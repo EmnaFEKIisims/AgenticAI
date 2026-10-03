@@ -1,5 +1,5 @@
 // src/components/rag/RagStatus.tsx
-// Shows Qdrant connection status + memory count.
+// Shows a simple, user-facing planning status summary.
 
 import { useEffect, useState } from "react";
 import {
@@ -31,25 +31,25 @@ export default function RagStatus({ userId, total }: Props) {
         </span>
         <div>
           <h3 className="text-sm font-semibold tracking-tight text-slate-900">
-            RAG system status
+            Your planning space
           </h3>
           <p className="text-xs text-slate-500">
-            Vector store and embedding information.
+            A quick look at what is ready to help with your plans.
           </p>
         </div>
       </header>
 
       {/* Body */}
       <div className="space-y-2 bg-slate-50/40 p-5">
-        {/* Qdrant */}
+        {/* Planning service */}
         <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-sm">
           <div className="flex items-center gap-3">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
               <Database className="h-3.5 w-3.5" aria-hidden="true" />
             </span>
             <div>
-              <p className="text-xs font-semibold text-slate-800">Qdrant vector DB</p>
-              <p className="font-mono text-[10px] text-slate-400">localhost:6333</p>
+              <p className="text-xs font-semibold text-slate-800">Planning assistant</p>
+              <p className="text-[10px] text-slate-400">Ready to use your preferences</p>
             </div>
           </div>
 
@@ -65,55 +65,51 @@ export default function RagStatus({ userId, total }: Props) {
             {qdrantOk === null ? (
               <>
                 <Loader2 className="h-2.5 w-2.5 animate-spin" aria-hidden="true" />
-                Checking
+                Checking…
               </>
             ) : qdrantOk ? (
               <>
                 <CheckCircle2 className="h-2.5 w-2.5" aria-hidden="true" />
-                Connected
+                Ready
               </>
             ) : (
               <>
                 <XCircle className="h-2.5 w-2.5" aria-hidden="true" />
-                Offline
+                Temporarily unavailable
               </>
             )}
           </span>
         </div>
 
-        {/* Memories */}
+        {/* Preferences */}
         <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-sm">
           <div className="flex items-center gap-3">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
               <Brain className="h-3.5 w-3.5" aria-hidden="true" />
             </span>
             <div>
-              <p className="text-xs font-semibold text-slate-800">Stored vectors</p>
-              <p className="font-mono text-[10px] text-slate-400">
-                user {userId.slice(0, 8)}
-              </p>
+              <p className="text-xs font-semibold text-slate-800">Your preferences</p>
+              <p className="text-[10px] text-slate-400">Choices and feedback remembered</p>
             </div>
           </div>
 
           <span className="font-mono text-lg font-bold text-slate-900">{total}</span>
         </div>
 
-        {/* Embedding model */}
+        {/* Guidance */}
         <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-sm">
           <div className="flex items-center gap-3">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-600">
               <Boxes className="h-3.5 w-3.5" aria-hidden="true" />
             </span>
             <div>
-              <p className="text-xs font-semibold text-slate-800">Embedding model</p>
-              <p className="font-mono text-[10px] text-slate-400">
-                all-MiniLM-L6-v2 · 384 dims
-              </p>
+              <p className="text-xs font-semibold text-slate-800">Helpful guidance</p>
+              <p className="text-[10px] text-slate-400">General planning recommendations</p>
             </div>
           </div>
 
           <span className="inline-flex items-center rounded-full border border-sky-100 bg-sky-50 px-2.5 py-0.5 text-[10px] font-semibold text-sky-700">
-            Local
+            Available
           </span>
         </div>
       </div>

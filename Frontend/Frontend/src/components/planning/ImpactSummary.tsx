@@ -49,7 +49,7 @@ export default function ImpactSummary({ impact }: ImpactSummaryProps) {
           <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Conflicts resolved</p>
           {resolved_conflicts.map((c, i) => (
             <div key={i} className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-              ✅ {c.description}
+              {c.description}
             </div>
           ))}
         </div>

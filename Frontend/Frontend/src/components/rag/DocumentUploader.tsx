@@ -1,5 +1,5 @@
 // src/components/rag/DocumentUploader.tsx
-// Paste or upload text to add to the Qdrant knowledge base.
+// Add useful planning guidance.
 
 import { useState } from "react";
 import { FilePlus2, CheckCircle2, Loader2, Send, FileText } from "lucide-react";
@@ -30,8 +30,8 @@ export default function DocumentUploader({ onIngest, isLoading }: Props) {
           <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
         </span>
         <div>
-          <p className="text-sm font-semibold text-emerald-800">Document indexed</p>
-          <p className="text-xs text-emerald-700/80">Added to the Qdrant knowledge base.</p>
+          <p className="text-sm font-semibold text-emerald-800">Guidance saved</p>
+            <p className="text-xs text-emerald-700/80">It will be considered in future plans.</p>
         </div>
       </div>
     );
@@ -46,10 +46,10 @@ export default function DocumentUploader({ onIngest, isLoading }: Props) {
         </span>
         <div className="min-w-0">
           <h3 className="text-sm font-semibold tracking-tight text-slate-900">
-            Add knowledge document
+            Add planning guidance
           </h3>
           <p className="mt-0.5 text-xs text-slate-500">
-            Pasted text will be chunked, embedded, and stored in Qdrant.
+            Add a note, rule, or guideline to consider when plans are prepared.
           </p>
         </div>
       </header>
@@ -58,36 +58,36 @@ export default function DocumentUploader({ onIngest, isLoading }: Props) {
       <div className="space-y-3 bg-slate-50/40 p-5">
         <div className="space-y-1.5">
           <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            Title
+            Name
           </label>
           <input
             value={title}
             onChange={e => setTitle(e.target.value)}
-            placeholder="e.g. ISO 21001 Training Rules"
+            placeholder="e.g. Practical training guidelines"
             className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
           />
         </div>
 
         <div className="space-y-1.5">
           <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            Source
+            Where it comes from
           </label>
           <input
             value={source}
             onChange={e => setSource(e.target.value)}
-            placeholder="e.g. ISO 21001:2018"
+            placeholder="e.g. Training handbook"
             className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
           />
         </div>
 
         <div className="space-y-1.5">
           <label className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            Content
+            Guidance
           </label>
           <textarea
             value={content}
             onChange={e => setContent(e.target.value)}
-            placeholder="Paste the full text of the document here…"
+            placeholder="Write or paste the guidance here…"
             rows={6}
             className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
           />
@@ -107,12 +107,12 @@ export default function DocumentUploader({ onIngest, isLoading }: Props) {
             {isLoading ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                Indexing…
+                Saving…
               </>
             ) : (
               <>
                 <Send className="h-3.5 w-3.5" aria-hidden="true" />
-                Index document
+                Save guidance
               </>
             )}
           </button>

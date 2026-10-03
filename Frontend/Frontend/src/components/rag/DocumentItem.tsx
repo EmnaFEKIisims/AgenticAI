@@ -17,7 +17,7 @@ export default function DocumentItem({ doc }: Props) {
         <p className="mt-0.5 truncate text-xs text-slate-400">
           {doc.source ?? "—"}
           <span className="mx-1.5 text-slate-300">·</span>
-          {doc.chunks} chunk{doc.chunks > 1 ? "s" : ""}
+          {doc.is_indexed ? "Ready to use" : "Being prepared"}
         </p>
       </div>
 
@@ -31,12 +31,12 @@ export default function DocumentItem({ doc }: Props) {
         {doc.is_indexed ? (
           <>
             <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
-            Indexed
+            Ready
           </>
         ) : (
           <>
             <Clock className="h-3 w-3" aria-hidden="true" />
-            Pending
+            Preparing
           </>
         )}
       </span>

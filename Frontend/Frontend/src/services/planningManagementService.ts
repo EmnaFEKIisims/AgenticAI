@@ -10,7 +10,7 @@
 //   types (types/planningValidation.ts) and was misleading about what the
 //   backend actually expects.
 //
-// ⚠️ getPlanningStatus() and getMoveHistory() call endpoints
+// getPlanningStatus() and getMoveHistory() call endpoints
 //   (/planning/{id}/status, /planning/session/{id}/history) that do not
 //   exist in the PlanningRouter.py shared in this conversation. Left
 //   untouched since they may live in a router file not yet reviewed —
@@ -72,7 +72,7 @@ export async function rejectPlanning(
 
 // =============================================================================
 //  HITL — Status
-//  ⚠️ No matching GET /planning/{id}/status endpoint found in the router
+//  No matching GET /planning/{id}/status endpoint found in the router
 //     shared so far. Verify before use.
 // =============================================================================
 
@@ -125,7 +125,7 @@ export async function moveSession(
 
 // =============================================================================
 //  Move History
-//  ⚠️ No matching GET /planning/session/{id}/history endpoint found in the
+//  No matching GET /planning/session/{id}/history endpoint found in the
 //     router shared so far. Verify before use.
 // =============================================================================
 

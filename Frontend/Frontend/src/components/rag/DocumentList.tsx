@@ -20,10 +20,10 @@ export default function DocumentList() {
           </span>
           <div>
             <h3 className="text-sm font-semibold tracking-tight text-slate-900">
-              Knowledge base
+              Saved guidance
             </h3>
             <p className="text-xs text-slate-500">
-              {documents.length} document{documents.length > 1 ? "s" : ""} indexed
+              {documents.length} item{documents.length > 1 ? "s" : ""} saved
             </p>
           </div>
         </div>
@@ -43,7 +43,7 @@ export default function DocumentList() {
         {isLoading && (
           <div className="flex items-center justify-center gap-2 py-8 text-xs text-slate-500">
             <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-            Loading documents…
+            Loading saved guidance…
           </div>
         )}
 
@@ -53,9 +53,9 @@ export default function DocumentList() {
               <Inbox className="h-5 w-5" aria-hidden="true" />
             </span>
             <div className="space-y-1">
-              <p className="text-sm font-semibold text-slate-700">No documents yet</p>
+              <p className="text-sm font-semibold text-slate-700">No guidance added yet</p>
               <p className="text-xs text-slate-400">
-                Add pedagogical rules or ISO standards above.
+                Add a helpful note above so it can be considered in future plans.
               </p>
             </div>
           </div>

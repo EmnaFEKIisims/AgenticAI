@@ -59,7 +59,7 @@ export default function RegenerationDialog({
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
                 Generating…
               </span>
-            ) : "🔄 Generate new proposal"}
+            ) : "Generate new proposal"}
           </button>
           <button onClick={onCancel} disabled={regenerating}
             className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">

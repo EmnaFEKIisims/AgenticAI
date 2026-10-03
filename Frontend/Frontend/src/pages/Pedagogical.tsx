@@ -24,7 +24,7 @@
 //     <CriterionCard />        ← détail au clic
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FileCheck2, ShieldCheck } from "lucide-react";
+import { FileCheck2 } from "lucide-react";
 import { useLocation }         from "react-router-dom";
 
 import AuditHeader             from "../components/pedagogical/AuditHeader";
@@ -39,6 +39,7 @@ import CriterionCard           from "../components/pedagogical/CriterionCard";
 import { usePedagogicalAudit } from "../hooks/usepedagogicalAudit";
 import type { CriterionResult } from "../types/pedagogical";
 import type { SessionSlot, Constraints } from "../types/planning";
+import "../styles/pedagogical.css";
 
 
 const PEDAGOGICAL_CACHE_KEY = "pedagogical-audit-cache-v1";
@@ -131,6 +132,7 @@ export default function PedagogicalAuditPage() {
 
   // ── Local UI state ─────────────────────────────────────────────────────────
   const [selected, setSelected] = useState<CriterionResult | null>(null);
+  const [activeSection, setActiveSection] = useState("pedagogical-overview");
   // ← ADDED: full criteria table is collapsed by default — it's the
   //   technical appendix, not the headline. Keeps the page short.
   const [showAllCriteria, setShowAllCriteria] = useState(false);
@@ -171,6 +173,27 @@ export default function PedagogicalAuditPage() {
       // Ignore storage failures and keep the page functional.
     }
   }, [preloadedSchedule, report, currentFingerprint]);
+
+  useEffect(() => {
+    const sectionIds = ["pedagogical-overview", "pedagogical-findings", "pedagogical-actions", "pedagogical-details"];
+    const sections = sectionIds
+      .map((id) => document.getElementById(id))
+      .filter((section): section is HTMLElement => Boolean(section));
+    if (!sections.length) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (visible) setActiveSection(visible.target.id);
+      },
+      { rootMargin: "-18% 0px -62% 0px", threshold: [0.1, 0.35, 0.7] },
+    );
+
+    sections.forEach((section) => observer.observe(section));
+    return () => observer.disconnect();
+  }, [hasReport]);
 
   // ── Handler: audit cached report or run from preloaded schedule ───────────
   const handleAudit = () => {
@@ -214,10 +237,10 @@ export default function PedagogicalAuditPage() {
     <div className="min-h-screen bg-slate-50">
 
       {/* ── Page header bar ─────────────────────────────────────────────── */}
-      <div className="border-b border-slate-200 bg-white/90 backdrop-blur-sm">
+      <div className="ped-page-top border-b border-slate-200 bg-white/90 backdrop-blur-sm">
         <div className="mx-auto max-w-6xl px-6 py-4">
           <div className="flex items-center gap-4">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-700 shadow-sm">
+            <div className="ped-page-icon flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-700 shadow-sm">
               <FileCheck2 className="h-5 w-5" aria-hidden="true" />
             </div>
 
@@ -228,16 +251,6 @@ export default function PedagogicalAuditPage() {
               </p>
             </div>
 
-            {hasReport && report && (
-              <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${
-                isCompliant
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                  : "border-rose-200 bg-rose-50 text-rose-700"
-              }`}>
-                <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-                {isCompliant ? "Compliant" : "Non-compliant"}
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -248,7 +261,7 @@ export default function PedagogicalAuditPage() {
         {/* Error banner */}
         {error && (
           <div className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-800">
-            ❌ {error}
+            {error}
           </div>
         )}
 
@@ -264,6 +277,25 @@ export default function PedagogicalAuditPage() {
           onAudit       = {handleAudit}
           onReset       = {() => { reset(); setSelected(null); }}
         />
+
+        <nav className="pedagogical-nav" aria-label="Audit sections">
+          <span className="pedagogical-nav-label">Report sections</span>
+          <div className="pedagogical-nav-links">
+            {["Overview", "Findings", "Action plan", "Details"].map((label, index) => {
+              const id = ["pedagogical-overview", "pedagogical-findings", "pedagogical-actions", "pedagogical-details"][index];
+              return (
+                <a
+                  key={id}
+                  href={`#${id}`}
+                  className={activeSection === id ? "is-active" : ""}
+                  onClick={() => setActiveSection(id)}
+                >
+                  {label}
+                </a>
+              );
+            })}
+          </div>
+        </nav>
 
         {/* Loading state */}
         {isLoading && (
@@ -291,7 +323,7 @@ export default function PedagogicalAuditPage() {
         {hasReport && report && !isLoading && (
           <>
             {/* ── Verdict: score gauge + AI narrative side by side ── */}
-            <div className="grid gap-6 lg:grid-cols-2">
+            <div id="pedagogical-overview" className="grid scroll-mt-28 gap-6 lg:grid-cols-2">
               <AuditScore
                 score          = {report.score}
                 grade          = {report.grade}
@@ -316,24 +348,28 @@ export default function PedagogicalAuditPage() {
             />
 
             {/* ── What's good / what needs fixing — curated, not everything ── */}
-            <KeyFindings
-              strengths = {passedCriteria}
-              issues    = {topIssues}
-              onSelect  = {setSelected}
-            />
+            <div id="pedagogical-findings" className="scroll-mt-28">
+              <KeyFindings
+                strengths = {passedCriteria}
+                issues    = {topIssues}
+                onSelect  = {setSelected}
+              />
+            </div>
 
             {/* ── Concrete action plan (narrative excluded, see above) ── */}
-            {selected ? (
-              <CriterionCard
-                criterion = {selected}
-                onClose   = {() => setSelected(null)}
-              />
-            ) : (
-              <RecommendationList recommendations={actionItems} />
-            )}
+            <div id="pedagogical-actions" className="scroll-mt-28">
+              {selected ? (
+                <CriterionCard
+                  criterion = {selected}
+                  onClose   = {() => setSelected(null)}
+                />
+              ) : (
+                <RecommendationList recommendations={actionItems} />
+              )}
+            </div>
 
             {/* ── Full criteria table — collapsed by default ── */}
-            <div className="rounded-3xl border border-slate-200 bg-white p-1 shadow-sm">
+            <div id="pedagogical-details" className="scroll-mt-28 rounded-3xl border border-slate-200 bg-white p-1 shadow-sm">
               <button
                 type="button"
                 onClick={() => setShowAllCriteria(v => !v)}

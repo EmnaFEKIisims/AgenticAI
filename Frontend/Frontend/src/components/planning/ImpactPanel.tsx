@@ -45,7 +45,7 @@ export default function ImpactPanel({
           {/* Global verdict */}
           <div className={`rounded-2xl border p-3 ${impact.is_safe ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
             <p className={`text-sm font-semibold ${impact.is_safe ? "text-emerald-800" : "text-amber-800"}`}>
-              {impact.is_safe ? "✅ No conflicts — safe to move" : `⚠️ ${impact.new_conflicts.length} conflict(s) detected`}
+              {impact.is_safe ? "No conflicts — safe to move" : `${impact.new_conflicts.length} conflict(s) detected`}
             </p>
             <p className="text-xs text-slate-600 mt-0.5">{impact.recommendation}</p>
           </div>
@@ -78,7 +78,7 @@ export default function ImpactPanel({
           >
             {isApplying
               ? <span className="flex items-center justify-center gap-2"><span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> Moving…</span>
-              : impact.is_safe ? "✅ Confirm move" : "⚠️ Move anyway"
+              : impact.is_safe ? "Confirm move" : "Move anyway"
             }
           </button>
           <button onClick={onCancel} disabled={isApplying}

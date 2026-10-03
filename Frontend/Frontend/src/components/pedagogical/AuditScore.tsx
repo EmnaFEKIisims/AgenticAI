@@ -35,15 +35,15 @@ export default function AuditScore({
   const badge      = complianceBadge(isCompliant);
 
   const gaugeColor: Record<AuditGrade, string> = {
-    A: "#059669",
-    B: "#0284c7",
-    C: "#d97706",
-    D: "#ea580c",
-    F: "#dc2626",
+    A: "#72b18e",
+    B: "#78a6c6",
+    C: "#a48bc2",
+    D: "#c9829a",
+    F: "#bf6f84",
   };
 
   return (
-    <div className={`overflow-hidden rounded-3xl border ${bgBorder} bg-white shadow-sm`}>
+    <div className={`ped-score-card overflow-hidden rounded-3xl border ${bgBorder} bg-white shadow-sm`}>
       <div className="p-6">
         <p className="mb-5 text-xs font-semibold uppercase tracking-wider text-slate-500">
           Audit score
@@ -78,12 +78,12 @@ export default function AuditScore({
               {complianceRate.toFixed(0)}% of criteria passed
             </p>
 
-            <span className={`mt-2.5 inline-flex items-center gap-1.5 rounded-full border px-3 py-0.5 text-xs font-semibold ${badge.className}`}>
+            <span className={`ped-compliance-badge mt-2.5 inline-flex items-center gap-1.5 rounded-full border px-3 py-0.5 text-xs font-semibold ${badge.className}`}>
               {badge.label}
             </span>
 
             {highViolations > 0 && (
-              <p className="mt-2.5 inline-flex items-center gap-1.5 text-xs font-medium text-rose-600">
+              <p className="ped-violations mt-2.5 inline-flex items-center gap-1.5 text-xs font-medium text-rose-600">
                 <AlertTriangle className="h-3 w-3" aria-hidden="true" />
                 {highViolations} high-severity violation{highViolations > 1 ? "s" : ""}
               </p>

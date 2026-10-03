@@ -1,5 +1,5 @@
 // src/components/rag/RagContextPreview.tsx
-// Shows what RAG context would be injected into the LLM for a given agent.
+// Shows which saved information can help each planning step.
 
 import { useState } from "react";
 import {
@@ -14,9 +14,9 @@ import {
 import { useRAG } from "../../hooks/useRAG";
 
 const AGENTS = [
-  { key: "planning",    label: "PlanningAgent",    Icon: CalendarDays,   desc: "Context for schedule generation" },
-  { key: "constraint",  label: "ConstraintAgent",  Icon: ClipboardList,  desc: "Context for constraint analysis" },
-  { key: "pedagogical", label: "PedagogicalAgent", Icon: GraduationCap,  desc: "Context for pedagogical audit" },
+  { key: "planning",    label: "Build a schedule",    Icon: CalendarDays,   desc: "Preferences for your timetable" },
+  { key: "constraint",  label: "Check your needs",  Icon: ClipboardList,  desc: "Availability and personal requests" },
+  { key: "pedagogical", label: "Improve learning", Icon: GraduationCap,  desc: "Guidance for a better experience" },
 ] as const;
 
 interface Props { userId: string; }
@@ -44,10 +44,10 @@ export default function RagContextPreview({ userId }: Props) {
         </span>
         <div className="min-w-0">
           <h3 className="text-sm font-semibold tracking-tight text-slate-900">
-            RAG context preview
+            How your choices help
           </h3>
           <p className="mt-0.5 text-xs text-slate-500">
-            See what memories will be injected into the LLM before each agent runs.
+            Choose a planning step to see what information can be useful there.
           </p>
         </div>
       </header>
@@ -96,7 +96,7 @@ export default function RagContextPreview({ userId }: Props) {
         {isLoading && (
           <div className="flex items-center justify-center gap-2 rounded-2xl border border-slate-100 bg-white py-8 text-xs text-slate-500">
             <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-            Querying Qdrant…
+            Looking at your saved preferences…
           </div>
         )}
 
@@ -107,24 +107,24 @@ export default function RagContextPreview({ userId }: Props) {
               {context.has_context ? (
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-100 bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700">
                   <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
-                  {context.memory_count} memories retrieved
+                  {context.memory_count} helpful detail{context.memory_count === 1 ? "" : "s"} found
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold text-slate-500">
-                  No context found
+                  Nothing saved for this step yet
                 </span>
               )}
             </div>
 
             {context.has_context ? (
-              <pre className="max-h-64 overflow-auto rounded-2xl border border-slate-200 bg-slate-950 p-4 font-mono text-[11px] leading-6 text-emerald-200">
-                {context.context}
-              </pre>
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4 text-xs leading-relaxed text-emerald-800">
+                Your saved choices and feedback can help make this part of the planning process more relevant to you.
+              </div>
             ) : (
               <div className="flex items-start gap-2.5 rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden="true" />
                 <p className="text-xs leading-relaxed text-amber-800">
-                  No relevant memories found. Generate and validate some plannings first to build up memory.
+                  There is not enough saved information for this step yet. Review a schedule or add a preference to get started.
                 </p>
               </div>
             )}

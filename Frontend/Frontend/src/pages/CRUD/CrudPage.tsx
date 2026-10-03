@@ -1,5 +1,6 @@
-import { ArrowRight, BookOpen, Building2, GraduationCap, HardHat, Users } from 'lucide-react'
+import { ArrowUpRight, BookOpen, Building2, Check, Database, GraduationCap, HardHat, ShieldCheck, Users } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import '../../styles/crud.css'
 
 const resources = [
   { label: 'Courses', description: 'Manage the courses used in planning.', icon: BookOpen, path: '/admin/courses' },
@@ -13,33 +14,52 @@ export default function CrudPage() {
   const navigate = useNavigate()
 
   return (
-    <main className="min-h-screen bg-slate-50 px-6 py-12">
-      <section className="mx-auto max-w-5xl">
-        <header className="mb-8">
-          <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Data management</p>
-          <h1 className="mt-2 text-3xl font-bold text-slate-900">What would you like to manage?</h1>
-          <p className="mt-2 text-slate-600">Choose a resource to create, edit, search, or delete its records.</p>
-        </header>
+    <main className="crud-page">
+      <section className="crud-overview crud-hub">
+        <div className="crud-hub-topline">
+          <span><Building2 size={15} aria-hidden="true" /> ScheduleForge / Workspace</span>
+          <span className="crud-overview-status"><i /> All systems ready</span>
+        </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {resources.map(({ label, description, icon: Icon, path }) => (
-            <button
-              key={path}
-              type="button"
-              onClick={() => navigate(path)}
-              className="group flex min-h-40 flex-col justify-between rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-400 hover:shadow-md"
-            >
-              <span className="flex items-start justify-between">
-                <Icon className="text-slate-700" size={25} aria-hidden="true" />
-                <ArrowRight className="text-slate-400 transition group-hover:translate-x-1 group-hover:text-slate-700" size={20} aria-hidden="true" />
+        <div className="crud-hub-hero">
+          <div className="crud-hub-copy">
+            <p className="crud-kicker">Data administration</p>
+            <h1>The workspace behind your schedule.</h1>
+            <p>Keep courses, people, rooms, and equipment aligned before you generate a plan.</p>
+          </div>
+          <aside className="crud-readiness-panel">
+            <div className="crud-readiness-heading">
+              <span><ShieldCheck size={16} aria-hidden="true" /> Planning readiness</span>
+              <strong>100%</strong>
+            </div>
+            <div className="crud-readiness-track"><span /></div>
+            <div className="crud-readiness-foot"><span>5 collections connected</span><span><Check size={13} /> Ready to plan</span></div>
+          </aside>
+        </div>
+
+        <div className="crud-resource-heading">
+          <div>
+            <span className="crud-section-label">Your collections</span>
+            <h2>Choose what to manage</h2>
+          </div>
+          <p>Each collection feeds directly into the planning engine.</p>
+        </div>
+
+        <div className="crud-resource-grid">
+          {resources.map(({ label, description, icon: Icon, path }, index) => (
+            <button key={path} type="button" onClick={() => navigate(path)} className={`crud-resource-card crud-resource-card-${index + 1}`}>
+              <span className="crud-resource-top">
+                <span className="crud-resource-index">0{index + 1}</span>
+                <span className="crud-resource-icon"><Icon size={21} aria-hidden="true" /></span>
+                <ArrowUpRight className="crud-resource-arrow" size={19} aria-hidden="true" />
               </span>
-              <span>
-                <span className="block text-lg font-semibold text-slate-900">{label}</span>
-                <span className="mt-1 block text-sm text-slate-500">{description}</span>
-              </span>
+              <span className="crud-resource-copy"><span>{label}</span><small>{description}</small></span>
+              <span className="crud-resource-link">Open collection <ArrowUpRight size={14} aria-hidden="true" /></span>
             </button>
           ))}
         </div>
+
+        <footer className="crud-hub-footer"><Database size={14} aria-hidden="true" /> Changes here are reflected in your next generated planning.</footer>
       </section>
     </main>
   )

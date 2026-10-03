@@ -21,7 +21,7 @@ export function severityLabel(severity: AnomalySeverity): string {
 }
 
 export function severityIcon(severity: AnomalySeverity): string {
-  return { high: "🔴", medium: "🟡", low: "🟢" }[severity] ?? "⚪";
+  return "";
 }
 
 export function severityColor(severity: AnomalySeverity): string {
@@ -116,14 +116,7 @@ export function categoryLabel(category: AnomalyCategory): string {
 }
 
 export function categoryIcon(category: AnomalyCategory): string {
-  return {
-    conflict:   "⚡",
-    overload:   "📈",
-    compliance: "🎓",
-    capacity:   "🏫",
-    schedule:   "🕒",
-    other:      "❓",
-  }[category];
+  return "";
 }
 
 /**
