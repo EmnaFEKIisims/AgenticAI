@@ -253,10 +253,19 @@
 }
 
 .ped-audit-actions {
-  min-height: 4.8rem;
-  justify-content: flex-start;
-  border-top: 1px solid #f3f5f7;
-  padding: 1rem 2.25rem !important;
+  justify-content: flex-end;
+}
+
+.ped-audit-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.ped-audit-header-actions .ped-audit-context {
+  flex: 0 1 auto;
 }
 
 .ped-audit-primary {
@@ -286,6 +295,7 @@
 
 @media (max-width: 700px) {
   .ped-audit-card-top { padding: 1.35rem !important; }
-  .ped-audit-actions { padding: 0.9rem 1.35rem !important; }
+  .ped-audit-header-actions { width: 100%; align-items: flex-start; flex-direction: column; }
+  .ped-audit-actions { justify-content: flex-start; }
   .ped-audit-context { width: 100%; }
 }

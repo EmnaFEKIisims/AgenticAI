@@ -471,7 +471,7 @@ export default function PlanningPage() {
                   })}
                   <button onClick={() => setMode("dnd")}
                     className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all flex items-center gap-2 ${mode === "dnd" ? "bg-white text-gray-900 shadow-sm" : "text-gray-600 hover:text-gray-900"}`}>
-                    <Move className="w-4 h-4" />Drag & Drop
+                    <Move className="w-4 h-4" />Personnalization
                   </button>
                 </div>
               </div>
