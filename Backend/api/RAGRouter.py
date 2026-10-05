@@ -220,7 +220,7 @@ def list_memories(
 ):
     try:
         from rag.rag_store import get_user_memories
-        memories = get_user_memories(user_id, memory_type=memory_type, limit=limit)
+        memories = get_user_memories(user_id, db, memory_type=memory_type, limit=limit)
         return {
             "user_id":  user_id,
             "total":    len(memories),
@@ -274,21 +274,13 @@ def add_feedback(body: FeedbackRequest, db: Session = Depends(get_db)):
 def add_memory_manual(body: ManualMemoryRequest, db: Session = Depends(get_db)):
     """Manually adds a memory (admin use)."""
     try:
-        from rag.rag_indexer  import index_user_preference
-        from rag.memory_types import MemoryType
-        mt = MemoryType(body.memory_type)
-        from rag.rag_indexer import (
-            index_user_preference, index_decision, index_feedback,
-            index_conflict, index_planning_result, index_pedagogical_rule
-        )
-        # Route to appropriate indexer
-        fn_map = {
-            "user_preference":       index_user_preference,
-            "user_feedback":         index_feedback,
-            "decision_history":      index_decision,
-        }
+        svc = RAGService(db)
+        svc.ensure_user(body.user_id)   # ← FIX: create the user first, avoids ForeignKeyViolation
+
+        from rag.memory_types import MemoryType, MemoryDocument
         from rag.rag_store import add_memory
-        from rag.memory_types import MemoryDocument
+
+        mt = MemoryType(body.memory_type)
         doc = MemoryDocument(
             content     = body.content,
             memory_type = mt,
@@ -297,7 +289,7 @@ def add_memory_manual(body: ManualMemoryRequest, db: Session = Depends(get_db)):
             importance  = body.importance,
             tags        = body.tags,
         )
-        mem_id = add_memory(doc)
+        mem_id = add_memory(doc, db)
         return {"success": True, "memory_id": mem_id}
     except Exception as e:
         traceback.print_exc()
@@ -308,7 +300,7 @@ def add_memory_manual(body: ManualMemoryRequest, db: Session = Depends(get_db)):
 def delete_one_memory(memory_id: str, db: Session = Depends(get_db)):
     try:
         from rag.rag_store import delete_memory
-        ok = delete_memory(memory_id)
+        ok = delete_memory(memory_id, db)
         if not ok:
             raise HTTPException(404, detail=f"Memory {memory_id} not found.")
         return {"success": True, "deleted_id": memory_id}
@@ -383,7 +375,7 @@ def list_documents(db: Session = Depends(get_db)):
             "total":     len(docs),
             "documents": [
                 {"id": d.id, "title": d.title, "source": d.source,
-                 "type": d.document_type.value, "is_indexed": d.is_indexed,
+                 "type": d.document_type, "is_indexed": d.is_indexed,
                  "chunks": repo.count_chunks(d.id)}
                 for d in docs
             ],

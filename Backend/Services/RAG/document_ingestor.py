@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from qdrant_client.models import PointStruct
 
 from Services.RAG.chunker import chunk_document, TextChunk
-from repositories.knowledge_repository import KnowledgeRepository
+from Services.RAG.repositories.knowledge_repository import KnowledgeRepository
 from rag.rag_config import get_qdrant, embed, embed_batch, COLLECTION_KNOWLEDGE
 
 
@@ -128,12 +128,13 @@ def query_knowledge(query: str, n_results: int = 5) -> list[dict]:
     client    = get_qdrant()
     query_vec = embed(query)
 
-    results = client.search(
+    response = client.query_points(
         collection_name = COLLECTION_KNOWLEDGE,
-        query_vector    = query_vec,
+        query           = query_vec,
         limit           = n_results,
         with_payload    = True,
     )
+    results = response.points
 
     return [
         {

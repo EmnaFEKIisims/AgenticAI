@@ -2,7 +2,7 @@
 repositories/memory_repository.py
 ====================================
 DB operations for Memory model (PostgreSQL side).
-ChromaDB operations are handled in rag/rag_store.py.
+Vector operations are handled in rag/rag_store.py (Qdrant).
 """
 
 from sqlalchemy.orm import Session
@@ -23,8 +23,8 @@ class MemoryRepository:
     def get_by_id(self, memory_id: int) -> Memory | None:
         return self.db.query(Memory).filter(Memory.id == memory_id).first()
 
-    def get_by_chroma_id(self, chroma_id: str) -> Memory | None:
-        return self.db.query(Memory).filter(Memory.chroma_id == chroma_id).first()
+    def get_by_qdrant_id(self, qdrant_id: str) -> Memory | None:
+        return self.db.query(Memory).filter(Memory.qdrant_id == qdrant_id).first()
 
     def get_for_user(
         self,
@@ -56,7 +56,7 @@ class MemoryRepository:
     ) -> Memory | None:
         """
         Simple text-based deduplication: checks if a very similar memory already exists.
-        For proper semantic dedup, use ChromaDB similarity.
+        For proper semantic dedup, use Qdrant similarity.
         """
         existing = self.db.query(Memory).filter(
             Memory.user_id     == user_id,
@@ -84,21 +84,21 @@ class MemoryRepository:
         return True
 
     def delete(self, memory_id: int) -> str | None:
-        """Returns the chroma_id before deleting (for ChromaDB cleanup)."""
+        """Returns the qdrant_id before deleting (for Qdrant cleanup)."""
         mem = self.get_by_id(memory_id)
         if not mem:
             return None
-        chroma_id = mem.chroma_id
+        qdrant_id = mem.qdrant_id
         self.db.delete(mem)
         self.db.commit()
-        return chroma_id
+        return qdrant_id
 
     def delete_all_for_user(self, user_id: str) -> tuple[int, list[str]]:
-        """Returns (count, list of chroma_ids) for ChromaDB cleanup."""
+        """Returns (count, list of qdrant_ids) for Qdrant cleanup."""
         mems = self.get_for_user(user_id, active_only=False)
-        chroma_ids = [m.chroma_id for m in mems if m.chroma_id]
+        qdrant_ids = [m.qdrant_id for m in mems if m.qdrant_id]
         count = len(mems)
         for m in mems:
             self.db.delete(m)
         self.db.commit()
-        return count, chroma_ids
+        return count, qdrant_ids

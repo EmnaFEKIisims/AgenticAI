@@ -83,6 +83,15 @@ def chunk_by_paragraph(
     """
     Splits by paragraph first (double newline), then merges or splits as needed.
     Better for structured documents (PDFs with sections).
+
+    NOTE: the trailing leftover buffer is now always kept, even if it is
+    shorter than min_words. Previously a document whose total content was
+    under min_words (common for short manual test inputs, short rules, or
+    single-sentence snippets) produced ZERO chunks with no error — the
+    content was silently discarded. min_words still prevents tiny
+    *intermediate* paragraphs from becoming their own chunk (they get
+    merged into the buffer instead), but the final remainder is never
+    dropped just for being short.
     """
     paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
     chunks     = []
@@ -110,8 +119,8 @@ def chunk_by_paragraph(
             else:
                 buffer = para
 
-    if buffer and len(buffer.split()) >= min_words:
-        chunks.append(TextChunk(content=buffer, chunk_index=idx))
+    if buffer.strip():
+        chunks.append(TextChunk(content=buffer.strip(), chunk_index=idx))
 
     return chunks
 

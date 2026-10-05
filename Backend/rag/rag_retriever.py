@@ -70,12 +70,13 @@ class RAGRetriever:
         """Retrieves pedagogical knowledge chunks from Qdrant."""
         from rag.rag_config import get_qdrant, embed, COLLECTION_KNOWLEDGE
         try:
-            results = get_qdrant().search(
+            response = get_qdrant().query_points(
                 collection_name = COLLECTION_KNOWLEDGE,
-                query_vector    = embed(query),
+                query           = embed(query),
                 limit           = n,
                 score_threshold = 0.3,
             )
+            results = response.points
             return [
                 {
                     "content": r.payload.get("content", ""),
@@ -84,5 +85,6 @@ class RAGRetriever:
                 }
                 for r in results
             ]
-        except Exception:
+        except Exception as e:
+            print(f"  [RAG] Qdrant knowledge search error: {e}")
             return []

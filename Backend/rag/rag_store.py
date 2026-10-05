@@ -4,7 +4,7 @@ rag/rag_store.py
 RAG storage — Qdrant (vectors) + PostgreSQL (metadata).
 
 Write: embed → Qdrant.upsert → PostgreSQL.insert
-Read:  embed query → Qdrant.search → return MemoryDocuments
+Read:  embed query → Qdrant.query_points → return MemoryDocuments
 """
 
 from __future__ import annotations
@@ -145,11 +145,20 @@ def query_memories(
     db:             Session,
     memory_types:   list[str] | None = None,
     n_results:      int              = DEFAULT_N_RESULTS,
-    min_similarity: float            = 0.3,
+    min_similarity: float            = 0.15,
 ) -> list[MemoryDocument]:
     """
     Semantic search via Qdrant cosine similarity.
     Filters by user_id and optionally memory_type.
+
+    NOTE 1: min_similarity lowered from 0.3 to 0.15 — a short specific memory
+    scored against a long generic agent query often lands below 0.3.
+
+    NOTE 2: uses query_points() instead of the removed/deprecated search().
+    Newer qdrant-client versions dropped QdrantClient.search() entirely —
+    calling it raises AttributeError, which was being silently swallowed by
+    the except block below, making every semantic query return [] with no
+    visible error besides the printed log line.
     """
     query_vec = embed(query)
 
@@ -159,13 +168,14 @@ def query_memories(
         must.append(FieldCondition(key="memory_type", match=MatchValue(value=memory_types[0])))
 
     try:
-        results = get_qdrant().search(
+        response = get_qdrant().query_points(
             collection_name = COLLECTION_MEMORIES,
-            query_vector    = query_vec,
+            query           = query_vec,
             query_filter    = Filter(must=must),
             limit           = n_results,
             score_threshold = min_similarity,
         )
+        results = response.points
     except Exception as e:
         print(f"  [RAG] Qdrant search error: {e}")
         return []

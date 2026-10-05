@@ -66,14 +66,14 @@ class KnowledgeRepository:
     def create_chunks(
         self,
         doc_id: int,
-        chunks: list[dict],   # [{"content": "...", "chunk_index": 0, "page": 1, ...}]
+        chunks: list[dict],   # [{"content": "...", "chunk_index": 0, "chroma_id": "...", ...}]
     ) -> list[KnowledgeChunk]:
         rows = []
         for c in chunks:
             row = KnowledgeChunk(
                 document_id = doc_id,
                 content     = c["content"],
-                chroma_id   = c.get("chroma_id"),
+                qdrant_id   = c.get("chroma_id"),   # dict key stays "chroma_id" from document_ingestor, model column is qdrant_id
                 chunk_index = c["chunk_index"],
                 page_number = c.get("page_number"),
                 section     = c.get("section"),
