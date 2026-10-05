@@ -100,14 +100,19 @@ def test_llm_connection() -> bool:
             resp = client.chat.completions.create(
                 model    = os.getenv("CLOUD_LLM_MODEL", "llama3-70b-8192"),
                 messages = [{"role": "user", "content": "Reply with exactly: LLM_OK"}],
-                max_tokens=10, temperature=0.1
+                max_tokens=100, temperature=0.1
+                # ↑ FIX: était à 10. openai/gpt-oss-* sont des modèles de raisonnement —
+                # ils consomment des tokens de "réflexion" interne avant la réponse finale,
+                # donc 10 tokens suffisait à peine pour le raisonnement et laissait 0 pour
+                # le texte réel, d'où le "content" vide.
             )
             text = resp.choices[0].message.content or ""
             if "LLM_OK" in text:
                 print(f"  ✅ Groq ({os.getenv('CLOUD_LLM_MODEL')}) — OK")
                 cloud_ok = True
             else:
-                print(f"  ⚠️  Groq — réponse inattendue : {text}")
+                print(f"  ⚠️  Groq — réponse inattendue : {text!r}")
+                print(f"  [DEBUG] Réponse brute complète : {resp}")
         except Exception as e:
             print(f"  ⚠️  Groq — erreur : {e}")
 
