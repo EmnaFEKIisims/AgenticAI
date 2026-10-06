@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
+python-dotenv
+qdrant-client
+sentence-transformers
+groq
+python-jose[cryptography]
+email-validator
+httpx
+python-jose[cryptography]
+email-validator
+httpx

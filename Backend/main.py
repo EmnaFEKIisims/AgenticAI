@@ -39,6 +39,7 @@ from api.TrainerRouter      import router as trainer_router
 from api.LearnerGroupRouter import router as learner_group_router
 from api.CourseRouter      import router as course_router
 from api.EquipmentRouter    import router as equipment_router
+from api.AuthRouter import router as auth_router
 
 
 def get_db():
@@ -190,6 +191,7 @@ app.include_router(trainer_router)
 app.include_router(learner_group_router)
 app.include_router(course_router)
 app.include_router(equipment_router)
+app.include_router(auth_router)
 
 
 @app.get("/")
