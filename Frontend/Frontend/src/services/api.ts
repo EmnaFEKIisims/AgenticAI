@@ -4,10 +4,12 @@
 // Single centralized fetch function used by ALL services.
 //
 // What it does automatically:
-//   Adds X-User-ID header        → backend knows which user
+//   Adds X-User-ID header        → backend knows which user (legacy endpoints)
+//   Adds Authorization: Bearer   → backend knows which user (Keycloak, routes protégées)
 //   Adds Content-Type: application/json
 //   Handles errors uniformly
-//   🔜 Will add Authorization: Bearer (after Keycloak)
+
+import { getAccessToken } from "../utils/tokenStorage";
 
 const SUPERADMIN_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -23,7 +25,7 @@ function getUserId(): string {
 export async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
   const headers = new Headers(options.headers);
 
-  // Always set user identity (before Keycloak: from localStorage)
+  // Toujours l'identité (compat endpoints legacy qui lisent X-User-ID)
   headers.set("X-User-ID", getUserId());
 
   // JSON by default (overridden for FormData in uploadFile)
@@ -31,10 +33,11 @@ export async function apiFetch(path: string, options: RequestInit = {}): Promise
     headers.set("Content-Type", "application/json");
   }
 
-  // After Keycloak: uncomment these lines
-  // if (keycloak.authenticated && keycloak.token) {
-  //   headers.set("Authorization", `Bearer ${keycloak.token}`);
-  // }
+  // Keycloak : si on a un access_token, on l'attache (routes protégées par get_current_user)
+  const token = getAccessToken();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
 
   const url = path.startsWith("http") ? path : `${BASE}${path}`;
 

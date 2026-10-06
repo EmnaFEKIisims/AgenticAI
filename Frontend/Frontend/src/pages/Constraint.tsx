@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { ShieldCheck } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 
 import ConstraintForm    from "../components/constraint/ConstraintForm";
 import ValidationPanel   from "../components/constraint/ValidationPanel";
@@ -113,8 +113,8 @@ export default function ConstraintPage() {
       {/* Header */}
       <header className="border-b border-slate-200 bg-white/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-4xl items-center gap-4 px-6 py-5">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white shadow-sm">
-            <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm">
+            <SlidersHorizontal className="h-5 w-5" aria-hidden="true" />
           </span>
           <div className="min-w-0 flex-1">
             <h1 className="text-lg font-semibold tracking-tight text-slate-900">

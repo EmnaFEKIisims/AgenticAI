@@ -15,12 +15,21 @@ export default function CrudPage() {
 
   return (
     <main className="crud-page">
-      <section className="crud-overview crud-hub">
-        <div className="crud-hub-topline">
-          <span><Building2 size={15} aria-hidden="true" /> ScheduleForge / Workspace</span>
-          <span className="crud-overview-status"><i /> All systems ready</span>
+      <header className="border-b border-slate-200 bg-white/80 backdrop-blur-md">
+        <div className="mx-auto flex max-w-6xl items-center gap-4 px-6 py-5">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-700 shadow-sm">
+            <Database className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-lg font-semibold tracking-tight text-slate-900">Manage workspace</h1>
+            <p className="text-sm text-slate-500">
+              Keep courses, people, rooms, and equipment ready for planning.
+            </p>
+          </div>
         </div>
+      </header>
 
+      <section className="crud-overview crud-hub">
         <div className="crud-hub-hero">
           <div className="crud-hub-copy">
             <p className="crud-kicker">Data administration</p>

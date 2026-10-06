@@ -1,6 +1,6 @@
 // src/pages/DataPage.tsx
 import React, { useState, useCallback } from 'react';
-import { CheckCircle2, Database, Eye, FileUp, PencilLine } from 'lucide-react';
+import { CheckCircle2, Eye, FileUp, PencilLine } from 'lucide-react';
 import '../styles/data.css';
 import { 
   UploadResponse, 
@@ -148,8 +148,8 @@ const DataPage: React.FC = () => {
     <div className="data-page">
       <header className="data-header border-b border-slate-200 bg-white/80 backdrop-blur-md">
         <div className="data-header-inner mx-auto flex max-w-4xl items-center gap-4 px-6 py-5">
-          <span className="data-header-icon flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white shadow-sm" aria-hidden="true">
-            <Database className="h-5 w-5" />
+          <span className="data-header-icon bg-primary! text-primary-content! flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-sm" aria-hidden="true">
+            <FileUp className="h-5 w-5" />
           </span>
           <div className="min-w-0">
             <h1>Data manager</h1>
