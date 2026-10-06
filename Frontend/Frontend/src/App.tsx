@@ -16,6 +16,8 @@ import LearnerGroupsPage from "./pages/CRUD/LearnerGroupsPage";
 import CoursesPage       from "./pages/CRUD/CoursesPage";
 import EquipmentPage     from "./pages/CRUD/EquipmentPage";
 import CrudPage from './pages/CRUD/CrudPage.js'
+import AuthCallback from './pages/AuthCallback.js'
+import HomePage from './pages/Home.js'
 
 function App() {
   const navigate = useNavigate()
@@ -67,7 +69,9 @@ function App() {
       </div>
 
       <Routes>
-        <Route path="/" element={<StartPage />} />
+        <Route path="/" element={<HomePage />} />
+        <Route path="/start" element={<StartPage />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/constraints" element={<ConstraintPage />} />
         <Route path="/planning" element={<PlanningPage />} />
         <Route path="/data" element={<DataPage />} />

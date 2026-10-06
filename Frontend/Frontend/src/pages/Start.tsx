@@ -2,8 +2,8 @@ import {
   ArrowRight,
   Database,
   FileUp,
-  Settings2,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -59,11 +59,11 @@ export default function StartPage() {
           <button
             type="button"
             onClick={() => navigate('/constraints')}
-            className="group relative flex min-h-72 flex-col overflow-hidden rounded-3xl border border-base-300/70 bg-base-100 p-7 text-left shadow-sm transition duration-300 hover:-translate-y-1 hover:border-secondary/40 hover:shadow-xl hover:shadow-secondary/10 focus:outline-none focus:ring-4 focus:ring-secondary/20"
+            className="group relative flex min-h-72 flex-col overflow-hidden rounded-3xl border border-base-300/70 bg-base-100 p-7 text-left shadow-sm transition duration-300 hover:-translate-y-1 hover:border-blue-300 hover:shadow-xl hover:shadow-blue-100 focus:outline-none focus:ring-4 focus:ring-blue-200"
           >
             <div className="mb-8 flex items-start justify-between">
-              <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary/10 text-secondary transition group-hover:bg-secondary group-hover:text-secondary-content">
-                <Database size={23} aria-hidden="true" />
+              <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-100 text-blue-700 transition group-hover:bg-blue-600 group-hover:text-white">
+                <SlidersHorizontal size={23} aria-hidden="true" />
               </div>
               <span className="rounded-full bg-base-200 px-3 py-1 text-xs font-bold uppercase tracking-wider text-base-content/50">
                 Step 02
@@ -73,7 +73,7 @@ export default function StartPage() {
             <p className="mt-3 flex-1 text-sm leading-6 text-base-content/65">
               Set the rules and preferences that make your generated schedule truly yours.
             </p>
-            <span className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-secondary">
+            <span className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-blue-700">
               Configure rules
               <ArrowRight size={17} className="transition-transform group-hover:translate-x-1" aria-hidden="true" />
             </span>
@@ -82,11 +82,11 @@ export default function StartPage() {
           <button
             type="button"
             onClick={() => navigate('/crud')}
-            className="group relative flex min-h-72 flex-col overflow-hidden rounded-3xl border border-base-300/70 bg-base-100 p-7 text-left shadow-sm transition duration-300 hover:-translate-y-1 hover:border-accent/40 hover:shadow-xl hover:shadow-accent/10 focus:outline-none focus:ring-4 focus:ring-accent/20"
+            className="group relative flex min-h-72 flex-col overflow-hidden rounded-3xl border border-base-300/70 bg-base-100 p-7 text-left shadow-sm transition duration-300 hover:-translate-y-1 hover:border-rose-300 hover:shadow-xl hover:shadow-rose-100 focus:outline-none focus:ring-4 focus:ring-rose-200"
           >
             <div className="mb-8 flex items-start justify-between">
-              <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-accent/10 text-accent transition group-hover:bg-accent group-hover:text-accent-content">
-                <Settings2 size={23} aria-hidden="true" />
+              <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-rose-700 transition group-hover:bg-rose-500 group-hover:text-white">
+                <Database size={23} aria-hidden="true" />
               </div>
               <span className="rounded-full bg-base-200 px-3 py-1 text-xs font-bold uppercase tracking-wider text-base-content/50">
                 Anytime
@@ -96,7 +96,7 @@ export default function StartPage() {
             <p className="mt-3 flex-1 text-sm leading-6 text-base-content/65">
               Keep courses, rooms, trainers, equipment, and learner groups up to date.
             </p>
-            <span className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-accent">
+            <span className="mt-6 inline-flex items-center gap-2 text-sm font-bold text-rose-700">
               Open data manager
               <ArrowRight size={17} className="transition-transform group-hover:translate-x-1" aria-hidden="true" />
             </span>

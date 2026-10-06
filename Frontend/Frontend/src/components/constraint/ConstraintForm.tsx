@@ -1,4 +1,4 @@
-import { RefreshCw, Sparkles, Sliders, Wand2 } from "lucide-react";
+import { RefreshCw, Sparkles, SlidersHorizontal, Wand2 } from "lucide-react";
 import type { ConstraintFormValue } from "../../types/constraintTypes";
 import PedagogicalInput from "./PedagogicalInput";
 import UserConstraintInput from "./UserConstraintInput";
@@ -27,8 +27,8 @@ export default function ConstraintForm({
       {/* Card header */}
       <header className="relative border-b border-slate-100 bg-linear-to-br from-slate-50 via-white to-white px-6 py-6 sm:px-8">
         <div className="flex items-start gap-4">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white shadow-sm">
-            <Sliders className="h-5 w-5" aria-hidden="true" />
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700 shadow-sm">
+            <SlidersHorizontal className="h-5 w-5" aria-hidden="true" />
           </span>
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-semibold tracking-tight text-slate-900">
@@ -80,7 +80,7 @@ export default function ConstraintForm({
             type="button"
             onClick={onGenerate}
             disabled={isDisabled}
-            className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 hover:shadow disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-100 px-5 py-2.5 text-sm font-semibold text-rose-700 shadow-sm transition hover:border-rose-300 hover:bg-rose-200 hover:shadow disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Sparkles size={15} aria-hidden="true" />
             {loading ? "Generating..." : "Generate planning"}
