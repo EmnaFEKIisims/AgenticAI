@@ -30,10 +30,137 @@ import {
   LayoutGrid, Loader2, Pin, RefreshCw, Sparkles, Users,
   MoreHorizontal, Search, TrendingUp, ClipboardCheck,
   Move, XCircle, Settings2,
-  UserRound,
+  UserRound, CalendarDays, SlidersHorizontal, BrainCircuit,
+  ShieldCheck, CheckCircle2,
 } from "lucide-react";
 
 type PlanningViewMode = "global" | "group" | "trainer" | "dnd";
+
+const generationSteps = [
+  {
+    title: "Prepare your planning data",
+    description: "Reading courses, trainers, rooms, groups and availability.",
+    icon: CalendarDays,
+  },
+  {
+    title: "Apply your constraints",
+    description: "Combining database rules with the extra instructions you provided.",
+    icon: SlidersHorizontal,
+  },
+  {
+    title: "Build the training schedule",
+    description: "Assigning sessions to suitable days, times, trainers and rooms.",
+    icon: BrainCircuit,
+  },
+  {
+    title: "Check for conflicts",
+    description: "Verifying capacity, availability, breaks and overlapping sessions.",
+    icon: ShieldCheck,
+  },
+];
+
+function PlanningGenerationPreview() {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const startedAt = Date.now();
+    const timer = window.setInterval(() => {
+      setElapsed(Date.now() - startedAt);
+    }, 250);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const activeStep = Math.min(
+    generationSteps.length - 1,
+    Math.floor(elapsed / 1800),
+  );
+  const progress = Math.min(
+    92,
+    Math.max(8, Math.round((elapsed / (generationSteps.length * 1800)) * 100)),
+  );
+
+  return (
+    <section
+      className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-6 shadow-sm"
+      aria-live="polite"
+      aria-label="Planning generation progress"
+    >
+      <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+        <div className="flex items-start gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-600 shadow-sm">
+            <Loader2 className="h-6 w-6 animate-spin text-white" />
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">
+              Generating your planning
+            </p>
+            <h3 className="mt-1 text-lg font-semibold text-gray-900">
+              Building a schedule that fits your requirements
+            </h3>
+            <p className="mt-1 text-sm text-gray-600">
+              Here is what the planner is working through. Your schedule will appear here when these checks are complete.
+            </p>
+          </div>
+        </div>
+        <span className="whitespace-nowrap rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">
+          {progress}% prepared
+        </span>
+      </div>
+
+      <div className="mt-6 h-2 overflow-hidden rounded-full bg-blue-100">
+        <div
+          className="h-full rounded-full bg-blue-600 transition-[width] duration-500"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+
+      <ol className="mt-6 grid gap-3 md:grid-cols-2">
+        {generationSteps.map((step, index) => {
+          const Icon = step.icon;
+          const isComplete = index < activeStep;
+          const isActive = index === activeStep;
+
+          return (
+            <li
+              key={step.title}
+              className={`flex gap-3 rounded-xl border p-4 transition-colors ${
+                isActive
+                  ? "border-blue-300 bg-white shadow-sm"
+                  : isComplete
+                    ? "border-emerald-200 bg-emerald-50/70"
+                    : "border-gray-200 bg-white/60"
+              }`}
+            >
+              <div
+                className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                  isComplete
+                    ? "bg-emerald-100 text-emerald-600"
+                    : isActive
+                      ? "bg-blue-100 text-blue-600"
+                      : "bg-gray-100 text-gray-400"
+                }`}
+              >
+                {isComplete ? <CheckCircle2 className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+              </div>
+              <div>
+                <p className={`text-sm font-semibold ${isActive ? "text-blue-900" : "text-gray-800"}`}>
+                  {step.title}
+                  {isActive && <span className="ml-2 text-xs font-medium text-blue-500">In progress</span>}
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-gray-500">{step.description}</p>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+
+      <p className="mt-5 text-center text-xs text-gray-500">
+        This can take a few seconds for larger datasets. You can keep this page open while it runs.
+      </p>
+    </section>
+  );
+}
 
 // ── ADDED: base URL used elsewhere in the app's services. If your services
 //   use an axios instance with its own baseURL, replace this fetch call with
@@ -542,10 +669,7 @@ export default function PlanningPage() {
 
           {/* Status */}
           {state.status === "loading" && (
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-center justify-center gap-3">
-              <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
-              <span className="text-blue-700 font-medium">AI is processing your request...</span>
-            </div>
+            <PlanningGenerationPreview />
           )}
           {state.status === "error" && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-center gap-3">
