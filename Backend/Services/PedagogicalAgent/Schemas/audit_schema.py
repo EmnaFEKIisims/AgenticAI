@@ -11,6 +11,9 @@ Structure:
         ├── score          : 0-100 weighted score
         ├── grade          : A / B / C / D / F
         ├── criteria       : list of CriterionReport (one per rule checked)
+        ├── group_scores   : per-learner-group score, when the audited
+        │                    schedule spanned several groups (see
+        │                    PedagogicalAgent.generate_report)
         └── recommendations: list of actionable suggestions
 """
 
@@ -80,6 +83,16 @@ class AuditReport(BaseModel):
     recommendations: list[str]            = Field(default_factory=list,
                                                    description="Actionable improvement suggestions")
 
+    # ── Per-group breakdown ──────────────────────────────────────────────────────
+    group_scores:    dict[str, float] = Field(
+        default_factory=dict,
+        description=(
+            "Score per learner group, when the schedule audited spanned "
+            "several groups. Empty when the schedule was for a single group. "
+            "The top-level 'score' is the average across these."
+        ),
+    )
+
     # ── Summary counters ───────────────────────────────────────────────────────
     total_criteria:  int  = 0
     passed_criteria: int  = 0
@@ -132,4 +145,5 @@ class AuditReport(BaseModel):
             "iso_references":  self.iso_references,
             "criteria":        [c.model_dump() for c in self.criteria],
             "recommendations": self.recommendations,
+            "group_scores":    {g: round(s, 1) for g, s in self.group_scores.items()},
         }
