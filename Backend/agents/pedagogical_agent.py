@@ -29,6 +29,17 @@ Graph:
   [build_report]
     ↓
   END
+
+IMPORTANT — generate_report() now audits PER LEARNER GROUP.
+Every validator sums hours/gaps across all sessions it receives, assuming
+they belong to one learner's schedule. A schedule with several groups
+running in parallel (e.g. 5 groups all at 08:00 Monday) used to be fed in
+as ONE Planning, making the audit think a single learner had 15h of class
+on Monday instead of 3h — tanking the score for a schedule that is
+actually well optimized. generate_report() now splits the incoming
+schedule by group_name, audits each group's Planning separately, and
+returns an aggregated report (average score, per-group breakdown in
+`group_scores`).
 """
 
 from typing import TypedDict, Optional
@@ -36,7 +47,7 @@ from typing import TypedDict, Optional
 from langgraph.graph import StateGraph, END
 
 from Services.PedagogicalAgent.Schemas.Planning_schema   import Planning
-from Services.PedagogicalAgent.Schemas.audit_schema      import AuditReport, CriterionReport
+from Services.PedagogicalAgent.Schemas.audit_schema      import AuditReport, AuditGrade, CriterionReport
 from models.criterion_result   import CriterionResult
 from utils.rule_loader          import load_rules
 
@@ -46,7 +57,7 @@ from Services.PedagogicalAgent.Validators.progression_validator  import validate
 from Services.PedagogicalAgent.Validators.prerequisite_validator import validate as validate_practice
 from Services.PedagogicalAgent.Validators.teacher_validator      import validate as validate_teacher
 
-from Services.PedagogicalAgent.scoring_service import compute_full_score
+from Services.PedagogicalAgent.scoring_service import compute_full_score, grade as grade_from_score
 from Services.Llm.LlmService import _ask_ollama
 
 
@@ -238,16 +249,23 @@ class PedagogicalAgent:
 
     Usage:
         agent  = PedagogicalAgent()
-        report = agent.audit(planning)        # from Planning object
-        report = agent.generate_report(schedule, group_name="Group A")  # from schedule list
+        report = agent.audit(planning)        # from a Planning already scoped to ONE group
+        report = agent.generate_report(schedule, group_name="Group A")  # from raw schedule list
     """
 
     def __init__(self):
         self.graph = build_graph()
 
     def audit(self, planning: Planning) -> AuditReport:
+        """
+        Audits a SINGLE Planning. Callers must make sure `planning` holds
+        the sessions of one learner group only — every validator assumes
+        that. generate_report() below handles the multi-group splitting
+        for you; only call audit() directly with an already-filtered Planning.
+        """
         print(f"\n{'='*60}")
         print(f"  PEDAGOGICAL AGENT  (LangGraph)")
+        print(f"  Group    : {planning.group_name or 'N/A'}")
         print(f"  Sessions : {len(planning.sessions)}")
         print(f"  Hours    : {round(planning.total_hours, 1)}h total")
         print(f"{'='*60}")
@@ -269,7 +287,100 @@ class PedagogicalAgent:
 
     def generate_report(self, schedule: list[dict], group_name: str = "") -> AuditReport:
         """
-        Convenience: builds Planning from PlanningAgent output and audits it.
+        Builds Planning(s) from the PlanningAgent output and audits them.
+
+        If `schedule` contains sessions from several learner groups (several
+        distinct `group_name` values), each group is audited SEPARATELY —
+        auditing the whole mixed schedule as one Planning would sum every
+        group's hours into the same "day", flagging workload/break
+        violations that don't exist for any actual learner. The returned
+        report aggregates the per-group scores (simple average) and exposes
+        the breakdown in `report.group_scores`.
         """
-        planning = Planning.from_schedule(schedule, group_name=group_name)
-        return self.audit(planning)
+        if not schedule:
+            raise ValueError("Schedule is empty — nothing to audit.")
+
+        groups_present = sorted({
+            (s.get("group_name") or group_name) for s in schedule
+            if (s.get("group_name") or group_name)
+        })
+
+        if len(groups_present) <= 1:
+            planning = Planning.from_schedule(schedule, group_name=group_name)
+            if not planning.sessions:
+                raise ValueError(
+                    f"None of the {len(schedule)} session(s) in the schedule could be "
+                    "parsed into a valid Planning — check that each slot carries either "
+                    "'suggested_day'/'suggested_time' or 'start_time'/'end_time'. "
+                    "See the server logs for the per-session reason."
+                )
+            return self.audit(planning)
+
+        print(f"\n[PedAgent] Schedule spans {len(groups_present)} groups "
+              f"— auditing each group separately: {groups_present}")
+
+        per_group_reports: dict[str, AuditReport] = {}
+        for g in groups_present:
+            group_schedule = [s for s in schedule if (s.get("group_name") or group_name) == g]
+            planning = Planning.from_schedule(group_schedule, group_name=g)
+            if not planning.sessions:
+                print(f"  [PedAgent] Skipping group '{g}': no valid sessions parsed.")
+                continue
+            per_group_reports[g] = self.audit(planning)
+
+        if not per_group_reports:
+            raise ValueError(
+                f"None of the {len(schedule)} session(s) across {len(groups_present)} "
+                "group(s) could be parsed into a valid Planning. See server logs for "
+                "the per-session reason."
+            )
+
+        return self._aggregate_group_reports(per_group_reports)
+
+    def _aggregate_group_reports(self, reports: dict[str, AuditReport]) -> AuditReport:
+        """Combines several per-group AuditReports into one overall report."""
+        n = len(reports)
+        avg_score = sum(r.score for r in reports.values()) / n if n else 0.0
+
+        # Union of all criteria across groups, for the detail table
+        all_criteria: list[CriterionReport] = []
+        for r in reports.values():
+            all_criteria.extend(r.criteria)
+
+        # Recommendations, tagged by group, deduplicated
+        all_recs: list[str] = []
+        for g, r in reports.items():
+            for rec in r.recommendations:
+                tagged = f"[{g}] {rec}"
+                if tagged not in all_recs:
+                    all_recs.append(tagged)
+
+        total_criteria  = sum(r.total_criteria  for r in reports.values())
+        passed_criteria = sum(r.passed_criteria for r in reports.values())
+        high_violations = sum(r.high_violations for r in reports.values())
+        total_sessions  = sum(r.total_sessions   for r in reports.values())
+        total_hours     = sum(r.total_hours      for r in reports.values())
+
+        aggregated = AuditReport(
+            score           = round(avg_score, 2),
+            grade           = grade_from_score(avg_score),
+            is_compliant    = avg_score >= 60 and high_violations == 0,
+            criteria        = all_criteria,
+            recommendations = all_recs,
+            group_scores    = {g: r.score for g, r in reports.items()},
+            total_criteria  = total_criteria,
+            passed_criteria = passed_criteria,
+            failed_criteria = total_criteria - passed_criteria,
+            high_violations = high_violations,
+            planning_id     = None,
+            group_name      = None,
+            total_sessions  = total_sessions,
+            total_hours     = round(total_hours, 2),
+        )
+
+        print(f"\n[PedAgent] Aggregated {n} group report(s) → "
+              f"average score {aggregated.score_label} (Grade {aggregated.grade.value})")
+        for g, r in reports.items():
+            print(f"    - {g}: {r.score_label} (Grade {r.grade.value})")
+
+        return aggregated

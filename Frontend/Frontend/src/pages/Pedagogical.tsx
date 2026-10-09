@@ -305,17 +305,6 @@ export default function PedagogicalAuditPage() {
             <p className="text-sm font-semibold text-slate-700">
               Running pedagogical audit…
             </p>
-            <p className="mt-1 text-xs text-slate-400">
-              Validators → Scoring → LLM explanation
-            </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-2">
-              {['Workload','Breaks','Progression','Practice','Teacher','Room','Score','Explain'].map(s => (
-                <span key={s}
-                  className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">
-                  {s}
-                </span>
-              ))}
-            </div>
           </div>
         )}
 

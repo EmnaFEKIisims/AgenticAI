@@ -33,7 +33,8 @@ ISO_REF                  = "ISO 21001:2018 §8.3"
 
 def validate_daily_workload(planning: Planning) -> CriterionResult:
     """
-    Checks that no single day exceeds max_daily_hours.
+    Checks that no single REAL calendar day (week + weekday — see
+    Planning.days) exceeds max_daily_hours.
     Returns a partial score proportional to compliant days.
     """
     violations = []
@@ -41,8 +42,9 @@ def validate_daily_workload(planning: Planning) -> CriterionResult:
     for day in planning.days:
         hours = day.total_hours
         if hours > MAX_DAILY_HOURS:
+            label = f"{day.day.value}" if day.week is None else f"Week {day.week} {day.day.value}"
             violations.append({
-                "day":   day.day.value,
+                "day":   label,
                 "hours": round(hours, 2),
                 "limit": MAX_DAILY_HOURS,
                 "over":  round(hours - MAX_DAILY_HOURS, 2),
@@ -82,27 +84,55 @@ def validate_daily_workload(planning: Planning) -> CriterionResult:
 # =============================================================================
 
 def validate_weekly_workload(planning: Planning) -> CriterionResult:
-    """Checks that the total weekly hours do not exceed max_weekly_hours."""
-    total = planning.total_hours
+    """
+    Checks that EACH calendar week's total hours stays within
+    max_weekly_hours — not the whole multi-week program's grand total.
 
-    if total <= MAX_WEEKLY_HOURS:
+    The previous version compared planning.total_hours (the SUM across
+    every week of the program) against max_weekly_hours, which fails by
+    construction for any program longer than one week (e.g. 159h across
+    6 weeks vs a 30h/week limit → an automatic, unfixable HIGH violation
+    that has nothing to do with the schedule's actual quality).
+    """
+    weekly_hours = planning.weeks
+
+    if not weekly_hours:
+        return passed("Maximum weekly workload", weight=WEIGHT,
+                      message="No sessions to evaluate.", iso_reference=ISO_REF)
+
+    violations = []
+    for week, hours in weekly_hours.items():
+        if hours > MAX_WEEKLY_HOURS:
+            label = "week (unspecified)" if week is None else f"week {week}"
+            violations.append({
+                "week":  label,
+                "hours": round(hours, 2),
+                "limit": MAX_WEEKLY_HOURS,
+                "over":  round(hours - MAX_WEEKLY_HOURS, 2),
+            })
+
+    total_weeks = len(weekly_hours)
+    ok_weeks    = total_weeks - len(violations)
+    score       = (ok_weeks / total_weeks) * WEIGHT if total_weeks else WEIGHT
+
+    if not violations:
         return passed(
             rule          = "Maximum weekly workload",
             weight        = WEIGHT,
-            message       = f"Total weekly hours: {round(total, 1)}h (limit: {MAX_WEEKLY_HOURS}h).",
+            message       = f"All {total_weeks} week(s) within the {MAX_WEEKLY_HOURS}h limit.",
             iso_reference = ISO_REF,
         )
 
-    over = round(total - MAX_WEEKLY_HOURS, 2)
-    return failed(
+    weeks_str = ", ".join(f"{v['week']} ({v['hours']}h)" for v in violations)
+    return partial(
         rule           = "Maximum weekly workload",
         weight         = WEIGHT,
-        score          = 0,
+        score          = round(score, 2),
         severity       = Severity.HIGH,
-        message        = f"Weekly total {round(total, 1)}h exceeds the {MAX_WEEKLY_HOURS}h limit by {over}h.",
-        recommendation = f"Reduce total sessions by approximately {over}h across the week.",
+        message        = f"{len(violations)}/{total_weeks} week(s) exceed {MAX_WEEKLY_HOURS}h: {weeks_str}.",
+        recommendation = f"Reduce weekly load to ≤ {MAX_WEEKLY_HOURS}h per week.",
         iso_reference  = ISO_REF,
-        details        = {"total_hours": round(total, 2), "limit": MAX_WEEKLY_HOURS},
+        details        = {"violations": violations, "compliant_weeks": ok_weeks, "total_weeks": total_weeks},
     )
 
 
@@ -111,14 +141,15 @@ def validate_weekly_workload(planning: Planning) -> CriterionResult:
 # =============================================================================
 
 def validate_hard_course_concentration(planning: Planning) -> CriterionResult:
-    """Checks that no day has more than max_hard_courses_per_day difficult sessions."""
+    """Checks that no REAL calendar day has more than max_hard_courses_per_day difficult sessions."""
     violations = []
 
     for day in planning.days:
         hard_count = day.hard_session_count
         if hard_count > MAX_HARD_COURSES_PER_DAY:
+            label = f"{day.day.value}" if day.week is None else f"Week {day.week} {day.day.value}"
             violations.append({
-                "day":   day.day.value,
+                "day":   label,
                 "count": hard_count,
                 "limit": MAX_HARD_COURSES_PER_DAY,
             })

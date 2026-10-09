@@ -21,28 +21,36 @@ WEIGHT                = get_value("teacher_workload", "weight",                 
 ISO_REF               = "ISO 21001:2018 §7.1.2 / ISO 29993:2017 §5.2"
 
 
+def _day_label(week, day) -> str:
+    return day if week is None else f"Week {week} {day}"
+
+
 # =============================================================================
 #  RULE 1 — Daily teacher load
 # =============================================================================
 
 def check_teacher_load(planning: Planning) -> CriterionResult:
     """
-    Checks that no trainer teaches more than max_daily_hours_per_teacher in a day.
+    Checks that no trainer teaches more than max_daily_hours_per_teacher on
+    any REAL calendar day — grouped by (week, weekday) via s.day_key, not
+    weekday alone. Grouping by weekday only would sum a trainer's Monday
+    hours across every week of a multi-week program into one fake day,
+    e.g. 6 weeks x 3h Monday sessions reading as "18h on Monday".
     """
-    # Build: teacher → day → total_hours
-    teacher_day_hours: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    # Build: teacher → (week, day) → total_hours
+    teacher_day_hours: dict[str, dict[tuple, float]] = defaultdict(lambda: defaultdict(float))
 
     for s in planning.sessions:
         hours = (s.duration_minutes or 0) / 60
-        teacher_day_hours[s.teacher][s.day.value] += hours
+        teacher_day_hours[s.teacher][s.day_key] += hours
 
     violations = []
     for teacher, day_map in teacher_day_hours.items():
-        for day, hours in day_map.items():
+        for (week, day), hours in day_map.items():
             if hours > MAX_DAILY_HOURS:
                 violations.append({
                     "teacher": teacher,
-                    "day":     day,
+                    "day":     _day_label(week, day),
                     "hours":   round(hours, 2),
                     "limit":   MAX_DAILY_HOURS,
                     "over":    round(hours - MAX_DAILY_HOURS, 2),
@@ -81,21 +89,23 @@ def check_teacher_load(planning: Planning) -> CriterionResult:
 def check_availability(planning: Planning) -> CriterionResult:
     """
     Checks that no trainer teaches more than max_consecutive_hours_teacher
-    without a sufficient break.
+    without a sufficient break, on any REAL calendar day — grouped by
+    (week, weekday) via s.day_key, for the same reason as check_teacher_load
+    above (otherwise sessions from different weeks that happen to share a
+    weekday get treated as one long consecutive block).
     """
-    day_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
     MIN_BREAK = 15   # minutes — reuse from breaks config if preferred
 
-    # Build per-teacher, per-day sorted session list
-    teacher_day_sessions: dict[str, dict[str, list[Session]]] = defaultdict(lambda: defaultdict(list))
+    # Build per-teacher, per-(week,day) sorted session list
+    teacher_day_sessions: dict[str, dict[tuple, list[Session]]] = defaultdict(lambda: defaultdict(list))
     for s in planning.sessions:
-        teacher_day_sessions[s.teacher][s.day.value].append(s)
+        teacher_day_sessions[s.teacher][s.day_key].append(s)
 
     violations = []
     MAX_CONSEC_MINUTES = MAX_CONSEC_HOURS * 60
 
     for teacher, day_map in teacher_day_sessions.items():
-        for day, sessions in day_map.items():
+        for (week, day), sessions in day_map.items():
             sorted_s = sorted(sessions, key=lambda s: s.start_minutes)
 
             block_minutes = (sorted_s[0].duration_minutes or 0)
@@ -111,7 +121,7 @@ def check_availability(planning: Planning) -> CriterionResult:
                 if block_minutes > MAX_CONSEC_MINUTES:
                     violations.append({
                         "teacher":       teacher,
-                        "day":           day,
+                        "day":           _day_label(week, day),
                         "block_hours":   round(block_minutes / 60, 2),
                         "limit_hours":   MAX_CONSEC_HOURS,
                     })

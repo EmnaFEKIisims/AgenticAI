@@ -97,6 +97,7 @@ class AuditReportOut(BaseModel):
     iso_references:  list[str]
     criteria:        list[CriterionOut]
     recommendations: list[str]
+    group_scores:    dict[str, float] = Field(default_factory=dict)
 
 
 # =============================================================================
@@ -131,10 +132,27 @@ def run_audit(body: AuditRequest):
       ]
     }
     ```
+
+    IMPORTANT (Option A): when `schedule` contains several learner groups
+    running in parallel — the normal shape of a well-optimized multi-group
+    plan — this delegates to `PedagogicalAgent.generate_report()`, which
+    audits each group SEPARATELY and averages the scores. Building one
+    merged Planning across all groups and calling `.audit()` on it directly
+    (the previous behavior here) made every group's hours sum together as
+    if a single learner attended all of them at once, which is what was
+    tanking the score on an otherwise well-optimized schedule.
     """
-    # Build Planning object
     if body.schedule:
-        planning = Planning.from_schedule(body.schedule, group_name=body.group_name)
+        try:
+            report = _agent.generate_report(body.schedule, group_name=body.group_name)
+        except ValueError as e:
+            # Raised when no session in the payload could be parsed into a
+            # valid Planning (bad/missing day or time fields) — see server
+            # logs for the per-session reason from Planning.from_schedule().
+            raise HTTPException(status_code=422, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Audit failed: {str(e)}")
+
     elif body.sessions:
         sessions = [
             Session(
@@ -159,27 +177,26 @@ def run_audit(body: AuditRequest):
             planning_id = body.planning_id,
             group_name  = body.group_name,
         )
+
+        if not planning.sessions:
+            raise HTTPException(status_code=422, detail="Planning has no sessions to audit.")
+
+        if body.planning_id:
+            planning.planning_id = body.planning_id
+
+        try:
+            report = _agent.audit(planning)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Audit failed: {str(e)}")
+
     else:
         raise HTTPException(
             status_code=422,
             detail="Provide either 'schedule' (from PlanningAgent) or 'sessions' (direct input)."
         )
 
-    if not planning.sessions:
-        raise HTTPException(status_code=422, detail="Planning has no sessions to audit.")
-
-    # Set planning_id if provided
-    if body.planning_id:
-        planning.planning_id = body.planning_id
-
-    # Run the agent
-    try:
-        report = _agent.audit(planning)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Audit failed: {str(e)}")
-
     # Cache report
-    cache_key = body.planning_id or id(planning)
+    cache_key = body.planning_id or id(report)
     _reports[cache_key] = report
 
     return AuditReportOut(**report.to_dict())
