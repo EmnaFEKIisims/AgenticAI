@@ -4,6 +4,7 @@ interface EntityScheduleCardProps {
   title: string;
   sessions: SessionSlot[];
   entityType: "Group" | "Trainer";
+  timeSlots: string[];
 }
 
 interface DisplaySession {
@@ -13,7 +14,6 @@ interface DisplaySession {
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 const DAY_ABBREVIATIONS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
-const DEFAULT_TIME_SLOTS = ["08:00 → 11:00", "11:15 → 14:15", "14:30 → 17:30"];
 
 const COLORS = [
   "bg-sky-50 border-sky-200 text-sky-900",
@@ -34,7 +34,7 @@ function dayName(value: string): string {
   return value.replace(/^Week\s+\d+\s*[—-]?\s*/i, "").trim();
 }
 
-export default function EntityScheduleCard({ title, sessions, entityType }: EntityScheduleCardProps) {
+export default function EntityScheduleCard({ title, sessions, entityType, timeSlots }: EntityScheduleCardProps) {
   const groupedSessions = new Map<string, DisplaySession>();
 
   sessions.forEach((session) => {
@@ -54,10 +54,6 @@ export default function EntityScheduleCard({ title, sessions, entityType }: Enti
   });
 
   const displaySessions = Array.from(groupedSessions.values());
-  const timeSlots = Array.from(new Set([
-    ...DEFAULT_TIME_SLOTS,
-    ...sessions.map((session) => session.suggested_time),
-  ])).sort();
   const cells = new Map<string, DisplaySession[]>();
 
   displaySessions.forEach((displaySession) => {

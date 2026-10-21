@@ -44,12 +44,12 @@ export default function AuditHeader({
       {/* Header */}
       <header className="ped-audit-card-top flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 bg-linear-to-br from-slate-50 via-white to-white px-6 py-6 sm:px-8">
         <div className="flex items-start gap-4">
-          <span className="ped-audit-icon flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white shadow-sm">
+          <span className="ped-audit-icon flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-800 text-white shadow-sm">
             <ClipboardCheck className="h-5 w-5" aria-hidden="true" />
           </span>
           <div className="min-w-0">
             <h1 className="text-lg font-semibold tracking-tight text-slate-900">
-              Pedagogical Audit
+              Pedagogical Report
             </h1>
             <p className="mt-0.5 text-sm text-slate-500">
               Automated compliance check against quality standards.

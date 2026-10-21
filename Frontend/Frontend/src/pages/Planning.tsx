@@ -82,7 +82,7 @@ function PlanningGenerationPreview() {
 
   return (
     <section
-      className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 via-white to-indigo-50 p-6 shadow-sm"
+      className="rounded-2xl border border-blue-200 bg-linear-to-br from-blue-50 via-white to-indigo-50 p-6 shadow-sm"
       aria-live="polite"
       aria-label="Planning generation progress"
     >
@@ -573,12 +573,12 @@ export default function PlanningPage() {
         <div className="px-8 py-4 flex items-center justify-between">
           <div className="flex items-center gap-8">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-linear-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md">
-                <Sparkles className="w-5 h-5 text-white" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary text-primary-content shadow-lg shadow-primary/20">
+                <Sparkles className="h-5 w-5" aria-hidden="true" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">ScheduleForge</h1>
-                <p className="text-xs text-gray-500">AI Planning Studio</p>
+                <h1 className="text-lg font-black tracking-tight text-gray-900">ScheduleForge</h1>
+                <p className="text-xs font-medium text-gray-500">AI Planning Studio</p>
               </div>
             </div>
 

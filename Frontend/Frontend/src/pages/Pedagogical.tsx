@@ -24,7 +24,7 @@
 //     <CriterionCard />        ← détail au clic
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { FileCheck2 } from "lucide-react";
+import { ClipboardCheck } from "lucide-react";
 import { useLocation }         from "react-router-dom";
 
 import AuditHeader             from "../components/pedagogical/AuditHeader";
@@ -241,11 +241,11 @@ export default function PedagogicalAuditPage() {
         <div className="mx-auto max-w-6xl px-6 py-4">
           <div className="flex items-center gap-4">
             <div className="ped-page-icon flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-700 shadow-sm">
-              <FileCheck2 className="h-5 w-5" aria-hidden="true" />
+              <ClipboardCheck className="h-5 w-5" aria-hidden="true" />
             </div>
 
             <div className="min-w-0 flex-1">
-              <h1 className="text-lg font-semibold tracking-tight text-slate-900">Pedagogical Agent</h1>
+              <h1 className="text-lg font-semibold tracking-tight text-slate-900">Pedagogical Report</h1>
               <p className="text-xs text-slate-500">
                 Audit based on ISO 21001:2018 · ISO 29993:2017
               </p>

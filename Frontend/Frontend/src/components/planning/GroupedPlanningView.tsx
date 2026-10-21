@@ -21,6 +21,12 @@ function groupByKey(
   }, {});
 }
 
+function getTimeRank(timeRange: string): number {
+  const [start = "99:99"] = timeRange.split("→").map((part) => part.trim());
+  const [hour = "99", minute = "99"] = start.split(":");
+  return Number(hour) * 60 + Number(minute);
+}
+
 export default function GroupedPlanningView({ schedule, mode, showReasoning = false }: GroupedPlanningViewProps) {
   const grouped = useMemo(() => {
     const key = mode === "group" ? "group_name" : "trainer_name";
@@ -28,6 +34,11 @@ export default function GroupedPlanningView({ schedule, mode, showReasoning = fa
   }, [schedule, mode]);
 
   const names = useMemo(() => Object.keys(grouped).sort((a, b) => a.localeCompare(b)), [grouped]);
+  const timeSlots = useMemo(
+    () => Array.from(new Set(schedule.map((session) => session.suggested_time)))
+      .sort((a, b) => getTimeRank(a) - getTimeRank(b)),
+    [schedule],
+  );
 
   if (!names.length) return null;
 
@@ -35,10 +46,10 @@ export default function GroupedPlanningView({ schedule, mode, showReasoning = fa
     <section className="planning-grouped-view">
       {mode === "group"
         ? names.map((name) => (
-            <GroupCard key={name} groupName={name} sessions={grouped[name]} showReasoning={showReasoning} />
+            <GroupCard key={name} groupName={name} sessions={grouped[name]} timeSlots={timeSlots} showReasoning={showReasoning} />
           ))
         : names.map((name) => (
-            <TrainerCard key={name} trainerName={name} sessions={grouped[name]} showReasoning={showReasoning} />
+            <TrainerCard key={name} trainerName={name} sessions={grouped[name]} timeSlots={timeSlots} showReasoning={showReasoning} />
           ))}
     </section>
   );

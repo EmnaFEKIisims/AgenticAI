@@ -35,7 +35,7 @@ export default function AuditScore({
   const badge      = complianceBadge(isCompliant);
 
   const gaugeColor: Record<AuditGrade, string> = {
-    A: "#72b18e",
+    A: "#10b981",
     B: "#78a6c6",
     C: "#a48bc2",
     D: "#c9829a",
@@ -43,7 +43,7 @@ export default function AuditScore({
   };
 
   return (
-    <div className={`ped-score-card overflow-hidden rounded-3xl border ${bgBorder} bg-white shadow-sm`}>
+    <div className={`ped-score-card grade-${grade} overflow-hidden rounded-3xl border ${bgBorder} bg-white shadow-sm`}>
       <div className="p-6">
         <p className="mb-5 text-xs font-semibold uppercase tracking-wider text-slate-500">
           Audit score

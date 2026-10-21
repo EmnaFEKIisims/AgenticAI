@@ -9,7 +9,7 @@ export default function RecommendationList({ recommendations }: RecommendationLi
     <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
       {/* Header */}
       <header className="flex items-start gap-4 border-b border-slate-100 bg-linear-to-br from-slate-50 via-white to-white px-6 py-5 sm:px-8">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white shadow-sm">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-amber-200 bg-amber-100 text-amber-700 shadow-sm">
           <Lightbulb className="h-5 w-5" aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
@@ -43,7 +43,7 @@ export default function RecommendationList({ recommendations }: RecommendationLi
                 className="group rounded-2xl border border-slate-100 bg-white p-4 shadow-sm transition hover:border-slate-200 hover:shadow"
               >
                 <div className="flex items-start gap-3">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-slate-900 font-mono text-xs font-semibold text-white">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-amber-200 bg-amber-100 font-mono text-xs font-bold text-amber-700">
                     {String(index + 1).padStart(2, "0")}
                   </span>
                   <p className="pt-0.5 text-sm leading-relaxed text-slate-700">
