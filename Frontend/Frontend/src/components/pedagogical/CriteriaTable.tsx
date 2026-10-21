@@ -43,7 +43,7 @@ export default function CriteriaTable({
     <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
       {/* Header */}
       <header className="flex items-start gap-4 border-b border-slate-100 bg-linear-to-br from-slate-50 via-white to-white px-6 py-5 sm:px-8">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white shadow-sm">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-cyan-200 bg-cyan-100 text-cyan-700 shadow-sm">
           <Award className="h-5 w-5" aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">

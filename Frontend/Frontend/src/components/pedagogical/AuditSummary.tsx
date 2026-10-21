@@ -20,7 +20,7 @@ export default function AuditSummary({
     ? Math.round((passedCriteria / totalCriteria) * 100) : 0;
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+    <div className="ped-audit-summary overflow-hidden rounded-3xl border border-blue-200 bg-blue-50/60 shadow-sm">
       <div className="p-6">
         <p className="mb-5 text-xs font-semibold uppercase tracking-wider text-slate-500">
           Audit summary

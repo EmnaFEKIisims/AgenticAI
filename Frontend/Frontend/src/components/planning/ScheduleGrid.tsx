@@ -111,17 +111,27 @@ export default function ScheduleGrid({
     })();
   }, [sessions]);
 
-  // Time slots and week sessions
-  const allTimeSlots = useMemo(() =>
-    Array.from(new Set(sessions.map(s => s.suggested_time))).sort(),
-    [sessions]
-  );
   const weekSessions = sessions.filter(s => extractWeek(s.suggested_day) === currentWeek);
 
-  // Grid: "Day|TimeSlot" → session
+  // Keep the board scoped to the selected week. Room columns prevent sessions
+  // running in parallel from being overwritten in the same day/time cell.
+  const allTimeSlots = useMemo(() =>
+    Array.from(new Set(weekSessions.map(s => s.suggested_time))).sort(),
+    [weekSessions]
+  );
+  const rooms = useMemo(() =>
+    Array.from(new Set(weekSessions.map(s => s.room_name || "Unassigned room")))
+      .sort((a, b) => a.localeCompare(b)),
+    [weekSessions]
+  );
+
+  // Grid: "Day|TimeSlot|Room" → session
   const grid = useMemo(() => {
     const m = new Map<string, SessionSlotOut>();
-    weekSessions.forEach(s => m.set(`${extractDay(s.suggested_day)}|${s.suggested_time}`, s));
+    weekSessions.forEach(s => {
+      const room = s.room_name || "Unassigned room";
+      m.set(`${extractDay(s.suggested_day)}|${s.suggested_time}|${room}`, s);
+    });
     return m;
   }, [weekSessions]);
 
@@ -153,7 +163,9 @@ export default function ScheduleGrid({
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">
             Schedule — drag to rearrange
           </p>
-          <p className="text-sm text-slate-500 mt-0.5">{weekSessions.length} session(s) this week</p>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {weekSessions.length} session(s) across {rooms.length} room{rooms.length === 1 ? "" : "s"}
+          </p>
         </div>
         <div className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1">
           <button onClick={() => onWeekChange(currentWeek - 1)} disabled={currentWeek <= 1}
@@ -168,13 +180,14 @@ export default function ScheduleGrid({
 
       {/* Timetable */}
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-max text-sm">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50">
-              <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500 w-24">Day</th>
-              {allTimeSlots.map(slot => (
-                <th key={slot} className="px-2 py-3 text-center text-xs font-semibold text-slate-500 min-w-44">
-                  {slot}
+              <th className="w-24 px-4 py-3 text-left text-xs font-semibold uppercase text-slate-500">Day</th>
+              {rooms.map(room => (
+                <th key={room} className="min-w-56 px-3 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <span className="block text-slate-700">{room}</span>
+                  <span className="mt-0.5 block text-[10px] font-normal normal-case tracking-normal text-slate-400">Room column</span>
                 </th>
               ))}
             </tr>
@@ -186,37 +199,44 @@ export default function ScheduleGrid({
                   <div>{day}</div>
                   <div className="text-slate-400">{DAYS_ABR[di]}</div>
                 </td>
-                {allTimeSlots.map(slot => {
-                  const session  = grid.get(`${day}|${slot}`);
-                  const cellKey  = `${day}|${slot}`;
-                  const isOver   = overCell === cellKey;
-                  const [s, e]   = toISO(`Week ${currentWeek} — ${day}`, slot, referenceMonday);
+                {rooms.map(room => (
+                  <td key={room} className="min-w-56 px-3 py-2 align-top">
+                    <div className="space-y-2">
+                      {allTimeSlots.map(slot => {
+                        const session = grid.get(`${day}|${slot}|${room}`);
+                        const cellKey = `${day}|${slot}|${room}`;
+                        const isOver = overCell === cellKey;
+                        const [s, e] = toISO(`Week ${currentWeek} — ${day}`, slot, referenceMonday);
 
-                  return (
-                    <td key={slot} className={`px-2 py-2 transition-colors ${isOver ? "bg-sky-50" : ""}`}>
-                      {session ? (
-                        <DraggableScheduleSlot
-                          session     = {session}
-                          isDragging  = {(session.id ?? session.session_number) === draggingSlotId}
-                          onDragStart = {onDragStart}
-                          onDragEnd   = {onDragEnd}
-                        />
-                      ) : (
-                        <DropZone
-                          day        = {day}
-                          week       = {currentWeek}
-                          timeSlot   = {slot}
-                          startTime  = {s}
-                          endTime    = {e}
-                          isOver     = {isOver}
-                          onDragOver = {() => setOverCell(cellKey)}
-                          onDragLeave= {() => setOverCell(null)}
-                          onDrop     = {handleDrop}
-                        />
-                      )}
-                    </td>
-                  );
-                })}
+                        return (
+                          <div key={cellKey} className="rounded-xl border border-slate-100 bg-slate-50/40 p-1.5">
+                            <p className="mb-1 px-1 text-[10px] font-semibold text-slate-400">{slot}</p>
+                            {session ? (
+                              <DraggableScheduleSlot
+                                session={session}
+                                isDragging={(session.id ?? session.session_number) === draggingSlotId}
+                                onDragStart={onDragStart}
+                                onDragEnd={onDragEnd}
+                              />
+                            ) : (
+                              <DropZone
+                                day={day}
+                                week={currentWeek}
+                                timeSlot={slot}
+                                startTime={s}
+                                endTime={e}
+                                isOver={isOver}
+                                onDragOver={() => setOverCell(cellKey)}
+                                onDragLeave={() => setOverCell(null)}
+                                onDrop={handleDrop}
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </td>
+                ))}
               </tr>
             ))}
           </tbody>
